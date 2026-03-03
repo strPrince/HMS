@@ -1,0 +1,17 @@
+﻿# Expo
+.expo/
+web-build/
+
+# Node
+node_modules/
+
+# Bundlers
+*.log
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
