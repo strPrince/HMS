@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Plus, Minus } from 'lucide-react-native';
 import { colors } from '../constants/colors';
@@ -13,7 +13,7 @@ type MenuItemCardProps = {
   onRemove?: () => void;
 };
 
-export default function MenuItemCard({
+const MenuItemCard = memo(function MenuItemCard({
   name,
   description,
   price,
@@ -43,7 +43,15 @@ export default function MenuItemCard({
       )}
     </View>
   );
-}
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.name === nextProps.name &&
+    prevProps.price === nextProps.price &&
+    prevProps.quantity === nextProps.quantity
+  );
+});
+
+export default MenuItemCard;
 
 const styles = StyleSheet.create({
   card: {

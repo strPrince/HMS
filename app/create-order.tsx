@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useMemo, useState, useCallback } from 'react';
+import { Pressable, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Search, SlidersHorizontal } from 'lucide-react-native';
@@ -9,7 +9,13 @@ import MenuItemCard from '../components/MenuItemCard';
 import ItemCustomizationModal from '../components/ItemCustomizationModal';
 
 export default function CreateOrder() {
-  const { menuItems, cart, addToCart, updateCartItem, removeFromCart, getCartItemCount } = useRestaurantStore();
+  const menuItems = useRestaurantStore(state => state.menuItems);
+  const cart = useRestaurantStore(state => state.cart);
+  const addToCart = useRestaurantStore(state => state.addToCart);
+  const updateCartItem = useRestaurantStore(state => state.updateCartItem);
+  const removeFromCart = useRestaurantStore(state => state.removeFromCart);
+  const getCartItemCount = useRestaurantStore(state => state.getCartItemCount);
+  
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
@@ -39,12 +45,12 @@ export default function CreateOrder() {
     });
   }, [activeCategory, menuItems, query]);
 
-  const handleAddItem = (item: any) => {
+  const handleAddItem = useCallback((item: any) => {
     setSelectedItem(item);
     setShowCustomization(true);
-  };
+  }, []);
 
-  const handleAddToCart = (quantity: number, customizations: any) => {
+  const handleAddToCart = useCallback((quantity: number, customizations: any) => {
     if (!selectedItem) return;
 
     addToCart({
@@ -57,9 +63,9 @@ export default function CreateOrder() {
     
     setShowCustomization(false);
     setSelectedItem(null);
-  };
+  }, [selectedItem, addToCart]);
 
-  const handleRemoveItem = (itemId: string) => {
+  const handleRemoveItem = useCallback((itemId: string) => {
     const cartItem = cart.find((item) => item.itemId === itemId);
     if (!cartItem) return;
     
@@ -68,98 +74,112 @@ export default function CreateOrder() {
     } else {
       updateCartItem(itemId, cartItem.quantity - 1);
     }
-  };
+  }, [cart, removeFromCart, updateCartItem]);
 
-  const getItemQuantity = (itemId: string) => {
+  const getItemQuantity = useCallback((itemId: string) => {
     const cartItem = cart.find((item) => item.itemId === itemId);
     return cartItem?.quantity || 0;
-  };
+  }, [cart]);
 
-  const handleViewOrder = () => {
-    // Navigate to order summary to review before submitting
+  const handleViewOrder = useCallback(() => {
     router.push(`/order-summary/new?tableId=${params.tableId}`);
-  };
+  }, [params.tableId, router]);
+
+  const handleBack = useCallback(() => router.back(), [router]);
+  
+  const renderItem = useCallback(({ item }: { item: any }) => (
+    <MenuItemCard
+      name={item.name}
+      description={item.description}
+      price={item.price}
+      quantity={getItemQuantity(item.id)}
+      onAdd={() => handleAddItem(item)}
+      onRemove={() => handleRemoveItem(item.id)}
+    />
+  ), [getItemQuantity, handleAddItem, handleRemoveItem]);
+
+  const keyExtractor = useCallback((item: any) => item.id, []);
+
+  const renderCategoryItem = useCallback(({ item: category }: { item: string }) => (
+    <Pressable
+      style={[
+        styles.categoryChip,
+        activeCategory === category && styles.categoryChipActive
+      ]}
+      onPress={() => setActiveCategory(category)}
+    >
+      <Text
+        style={[
+          styles.categoryText,
+          activeCategory === category && styles.categoryTextActive
+        ]}
+      >
+        {category}
+      </Text>
+    </Pressable>
+  ), [activeCategory]);
+
+  const ListHeaderComponent = useCallback(() => (
+    <>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable style={styles.backButton} onPress={handleBack}>
+          <ArrowLeft size={24} color="#000" />
+        </Pressable>
+        <Text style={styles.title}>Menu</Text>
+        <Pressable style={styles.filterButton}>
+          <SlidersHorizontal size={24} color="#FF6B35" />
+        </Pressable>
+      </View>
+
+      <View style={styles.searchBar}>
+        <Search size={20} color="#999" />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search menu..."
+          style={styles.searchInput}
+          placeholderTextColor="#999"
+        />
+      </View>
+
+      <FlatList
+        horizontal
+        data={categories}
+        renderItem={renderCategoryItem}
+        keyExtractor={(item) => item}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoryRow}
+      />
+    </>
+  ), [insets.top, handleBack, query, categories, renderCategoryItem]);
+
+  const ListFooterComponent = useCallback(() => (
+    <View style={styles.listFooter} />
+  ), []);
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft size={24} color="#000" />
-          </Pressable>
-          <Text style={styles.title}>Menu</Text>
-          <Pressable style={styles.filterButton}>
-            <SlidersHorizontal size={24} color="#FF6B35" />
-          </Pressable>
-        </View>
+      <FlatList
+        data={filteredItems}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        ListHeaderComponent={ListHeaderComponent}
+        ListFooterComponent={ListFooterComponent}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+      />
 
-        <View style={styles.searchRow}>
-          <Search size={20} color="#B87656" />
-          <TextInput
-            placeholder="Search dishes..."
-            placeholderTextColor="#B87656"
-            style={styles.searchInput}
-            value={query}
-            onChangeText={setQuery}
-          />
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
-          {categories.map((category) => (
-            <Pressable
-              key={category}
-              style={[
-                styles.categoryChip,
-                activeCategory === category && styles.categoryChipActive
-              ]}
-              onPress={() => setActiveCategory(category)}
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  activeCategory === category && styles.categoryTextActive
-                ]}
-              >
-                {category}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            {activeCategory === 'All Items' ? 'Popular Items' : activeCategory}
+      {cart.length > 0 && (
+        <Pressable 
+          style={[styles.viewOrderButton, { bottom: Math.max(insets.bottom, 24) }]} 
+          onPress={handleViewOrder}
+        >
+          <Text style={styles.viewOrderText}>
+            View Order ({getCartItemCount()} items)
           </Text>
-          <Text style={styles.seeAll}>See all</Text>
-        </View>
+        </Pressable>
+      )}
 
-        <View style={styles.menuList}>
-          {filteredItems.map((item) => (
-            <MenuItemCard
-              key={item.id}
-              name={item.name}
-              description={item.description}
-              price={item.price}
-              quantity={getItemQuantity(item.id)}
-              onAdd={() => handleAddItem(item)}
-              onRemove={() => handleRemoveItem(item.id)}
-            />
-          ))}
-        </View>
-
-        {cart.length > 0 && (
-          <Pressable 
-            style={[styles.viewOrderButton, { marginBottom: Math.max(insets.bottom, 24) }]} 
-            onPress={handleViewOrder}
-          >
-            <Text style={styles.viewOrderText}>
-              View Order ({getCartItemCount()} items)
-            </Text>
-          </Pressable>
-        )}
-      </ScrollView>
-
-      {/* Customization Modal */}
       {selectedItem && (
         <ItemCustomizationModal
           visible={showCustomization}
@@ -184,6 +204,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 100
+  },
+  listFooter: {
+    height: 120
   },
   header: {
     flexDirection: 'row',
@@ -214,7 +237,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center'
   },
-  searchRow: {
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF',

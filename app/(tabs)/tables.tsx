@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState, useCallback, memo } from 'react';
+import { Pressable, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Bell, Users, Utensils, Receipt } from 'lucide-react-native';
@@ -10,8 +10,71 @@ import { useAuth } from '../../providers/AuthProvider';
 
 type FilterKey = 'all' | 'occupied' | 'billing';
 
+const TableCard = memo(function TableCard({ 
+  table, 
+  activeOrder, 
+  onPress 
+}: { 
+  table: any; 
+  activeOrder: any; 
+  onPress: () => void;
+}) {
+  const isAvailable = table.status === 'available';
+  const isBilling = table.status === 'billing';
+  const cardStyle = isAvailable
+    ? styles.cardFree
+    : isBilling
+      ? styles.cardBilling
+      : styles.cardOccupied;
+  const textColor = isAvailable ? '#D0D0D0' : '#FFF';
+
+  return (
+    <Pressable
+      style={[styles.tableCard, cardStyle]}
+      onPress={onPress}
+    >
+      {!isAvailable && (
+        <View style={styles.cardHeader}>
+          <Text style={styles.statusBadge}>
+            {isBilling ? 'BILLING' : activeOrder?.status === 'ready' ? 'READY' : 'OCCUPIED'}
+          </Text>
+          {isBilling ? (
+            <Receipt size={18} color="#FFF" />
+          ) : activeOrder?.status === 'ready' ? (
+            <Utensils size={18} color="#FFF" />
+          ) : (
+            <Users size={18} color="#FFF" />
+          )}
+        </View>
+      )}
+      {isAvailable && (
+        <Text style={styles.freeLabel}>FREE</Text>
+      )}
+      <Text style={[styles.tableNumber, { color: textColor }]}>
+        {table.label}
+      </Text>
+      {activeOrder && !isAvailable ? (
+        <Text style={styles.tableMeta}>
+          {activeOrder.items.reduce((sum: number, item: any) => sum + item.quantity, 0)} items
+          {table.elapsedMinutes ? ` • ${formatDuration(table.elapsedMinutes)}` : ''}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}, (prev, next) => {
+  return (
+    prev.table.id === next.table.id &&
+    prev.table.status === next.table.status &&
+    prev.table.elapsedMinutes === next.table.elapsedMinutes &&
+    prev.activeOrder?.id === next.activeOrder?.id
+  );
+});
+
 export default function Tables() {
-  const { tables, orders, selectTable, getTableActiveOrder, getCartItemCount, clearCart } = useRestaurantStore();
+  const tables = useRestaurantStore(state => state.tables);
+  const selectTable = useRestaurantStore(state => state.selectTable);
+  const getTableActiveOrder = useRestaurantStore(state => state.getTableActiveOrder);
+  const clearCart = useRestaurantStore(state => state.clearCart);
   const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -22,140 +85,111 @@ export default function Tables() {
     return tables.filter((table) => table.status === filter);
   }, [filter, tables]);
 
-  const handleTablePress = (table: typeof tables[number]) => {
+  const handleTablePress = useCallback((table: any) => {
     selectTable(table);
     
-    // If table has active order
     const activeOrder = getTableActiveOrder(table.id);
     
     if (activeOrder) {
       if (activeOrder.status === 'billing') {
-        // Go to billing
         router.push(`/generate-bill?tableId=${table.id}`);
       } else if (activeOrder.status === 'ready') {
-        // Show option to generate bill
         router.push(`/order/${activeOrder.id}`);
       } else {
-        // Show order details
         router.push(`/order/${activeOrder.id}`);
       }
     } else {
-      // New order - clear cart and go to menu
       clearCart();
       router.push(`/create-order?tableId=${table.id}`);
     }
-  };
+  }, [selectTable, getTableActiveOrder, clearCart, router]);
+
+  const renderTableCard = useCallback(({ item }: { item: any }) => {
+    const activeOrder = getTableActiveOrder(item.id);
+    return (
+      <TableCard
+        table={item}
+        activeOrder={activeOrder}
+        onPress={() => handleTablePress(item)}
+      />
+    );
+  }, [getTableActiveOrder, handleTablePress]);
+
+  const keyExtractor = useCallback((item: any) => item.id, []);
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
-          <View style={styles.headerLeft}>
-            <View style={styles.headerIcon}>
-              <Utensils size={20} color="#FF6B35" />
-            </View>
-            <Text style={styles.headerTitle}>Floor Plan</Text>
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+        <View style={styles.headerLeft}>
+          <View style={styles.headerIcon}>
+            <Utensils size={20} color="#FF6B35" />
           </View>
-          <View style={styles.headerRight}>
-            <Pressable style={styles.iconButton}>
-              <Bell size={20} color="#666" />
-            </Pressable>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{user?.initials || 'JD'}</Text>
-            </View>
+          <Text style={styles.headerTitle}>Floor Plan</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <Pressable style={styles.iconButton}>
+            <Bell size={20} color="#666" />
+          </Pressable>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{user?.initials || 'JD'}</Text>
           </View>
         </View>
+      </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-          {[
-            { key: 'all', label: 'All Tables', icon: null },
-            { key: 'occupied', label: 'Occupied', icon: '🔴' },
-            { key: 'billing', label: 'Billing', icon: '💳' },
-          ].map((item) => (
-            <Pressable
-              key={item.key}
-              style={[
-                styles.filterChip,
-                filter === item.key && styles.filterChipActive
-              ]}
-              onPress={() => setFilter(item.key as FilterKey)}
-            >
-              {item.key === 'all' && filter === item.key && (
-                <View style={styles.gridIcon}>
-                  <View style={styles.gridDot} />
-                  <View style={styles.gridDot} />
-                  <View style={styles.gridDot} />
-                  <View style={styles.gridDot} />
-                </View>
-              )}
-              {item.key === 'occupied' && (
-                <View style={styles.statusDot} />
-              )}
-              {item.key === 'billing' && (
-                <Receipt size={14} color={filter === item.key ? '#FFF' : '#666'} />
-              )}
-              <Text
-                style={[
-                  styles.filterText,
-                  filter === item.key && styles.filterTextActive
-                ]}
-              >
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        <View style={styles.grid}>
-          {filteredTables.map((table) => {
-            const isAvailable = table.status === 'available';
-            const isBilling = table.status === 'billing';
-            const cardStyle = isAvailable
-              ? styles.cardFree
-              : isBilling
-                ? styles.cardBilling
-                : styles.cardOccupied;
-            const textColor = isAvailable ? '#D0D0D0' : '#FFF';
-
-            const activeOrder = getTableActiveOrder(table.id);
-
-            return (
+      <FlatList
+        ListHeaderComponent={
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filters}
+            data={[
+              { key: 'all', label: 'All Tables' },
+              { key: 'occupied', label: 'Occupied' },
+              { key: 'billing', label: 'Billing' },
+            ]}
+            keyExtractor={(item) => item.key}
+            renderItem={({ item }) => (
               <Pressable
-                key={table.id}
-                style={[styles.tableCard, cardStyle]}
-                onPress={() => handleTablePress(table)}
+                style={[
+                  styles.filterChip,
+                  filter === item.key && styles.filterChipActive
+                ]}
+                onPress={() => setFilter(item.key as FilterKey)}
               >
-                {!isAvailable && (
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.statusBadge}>
-                      {isBilling ? 'BILLING' : activeOrder?.status === 'ready' ? 'READY' : 'OCCUPIED'}
-                    </Text>
-                    {isBilling ? (
-                      <Receipt size={18} color="#FFF" />
-                    ) : activeOrder?.status === 'ready' ? (
-                      <Utensils size={18} color="#FFF" />
-                    ) : (
-                      <Users size={18} color="#FFF" />
-                    )}
+                {item.key === 'all' && filter === item.key && (
+                  <View style={styles.gridIcon}>
+                    <View style={styles.gridDot} />
+                    <View style={styles.gridDot} />
+                    <View style={styles.gridDot} />
+                    <View style={styles.gridDot} />
                   </View>
                 )}
-                {isAvailable && (
-                  <Text style={styles.freeLabel}>FREE</Text>
+                {item.key === 'occupied' && (
+                  <View style={styles.statusDot} />
                 )}
-                <Text style={[styles.tableNumber, { color: textColor }]}>
-                  {table.label}
+                {item.key === 'billing' && (
+                  <Receipt size={14} color={filter === item.key ? '#FFF' : '#666'} />
+                )}
+                <Text
+                  style={[
+                    styles.filterText,
+                    filter === item.key && styles.filterTextActive
+                  ]}
+                >
+                  {item.label}
                 </Text>
-                {activeOrder && !isAvailable ? (
-                  <Text style={styles.tableMeta}>
-                    {activeOrder.items.reduce((sum, item) => sum + item.quantity, 0)} items
-                    {table.elapsedMinutes ? ` • ${formatDuration(table.elapsedMinutes)}` : ''}
-                  </Text>
-                ) : null}
               </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+            )}
+          />
+        }
+        data={filteredTables}
+        renderItem={renderTableCard}
+        keyExtractor={keyExtractor}
+        numColumns={2}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        columnWrapperStyle={styles.row}
+      />
     </View>
   );
 }
@@ -167,6 +201,11 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 40
+  },
+  row: {
+    gap: 16,
+    paddingHorizontal: 16,
+    marginBottom: 16
   },
   header: {
     flexDirection: 'row',
@@ -284,12 +323,6 @@ const styles = StyleSheet.create({
   },
   checkIconActive: {
     color: '#FFF'
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    paddingHorizontal: 16
   },
   tableCard: {
     width: '47%',
