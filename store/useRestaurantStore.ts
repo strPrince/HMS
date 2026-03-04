@@ -78,6 +78,9 @@ export const useRestaurantStore = create<RestaurantStore>((set, get) => ({
     tables: state.tables.map((t) => t.id === id ? { ...t, ...table } : t)
   })),
   deleteTable: (id) => set((state) => ({
+    tables: state.tables.filter((t) => t.id !== id)
+  })),
+  
   // Order Actions
   addOrder: (order) => set((state) => ({
     orders: [...state.orders, order],
@@ -143,8 +146,20 @@ export const useRestaurantStore = create<RestaurantStore>((set, get) => ({
   
   getKitchenOrders: () => {
     const { orders } = get();
-    return orders.filter((o) => o.status === 'in-kitchen' || o.status === 'ready'
+    return orders.filter((o) => o.status === 'in-kitchen' || o.status === 'ready');
+  },
+  
+  submitOrderToKitchen: (tableId, waiterName) => {
+    const { cart } = get();
+    if (cart.length === 0) return null;
+    
+    const newOrder: Order = {
+      id: `order-${Date.now()}`,
+      tableId,
+      items: cart,
+      status: 'in-kitchen',
       createdAt: getCurrentTimestamp(),
+      updatedAt: getCurrentTimestamp(),
       ...(waiterName && { waiterName }),
     };
     
