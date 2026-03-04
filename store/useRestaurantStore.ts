@@ -254,8 +254,7 @@ export const useRestaurantStore = create<RestaurantStore>((set, get) => ({
   getCartItemCount: () => {
     const { cart } = get();
     return cart.reduce((count, { quantity }) => count + quantity, 0);
-  }
-  })),
+  },
 
   selectTable: (table) => set(() => ({ selectedTable: table })),
   selectOrder: (order) => set(() => ({ selectedOrder: order })),
