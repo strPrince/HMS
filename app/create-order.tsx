@@ -5,6 +5,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Search, SlidersHorizontal } from 'lucide-react-native';
 import { colors } from '../constants/colors';
 import { useRestaurantStore } from '../store/useRestaurantStore';
+import type { OrderType } from '../types/restaurant';
 import MenuItemCard from '../components/MenuItemCard';
 import ItemCustomizationModal from '../components/ItemCustomizationModal';
 
@@ -15,7 +16,9 @@ export default function CreateOrder() {
   const updateCartItem = useRestaurantStore(state => state.updateCartItem);
   const removeFromCart = useRestaurantStore(state => state.removeFromCart);
   const getCartItemCount = useRestaurantStore(state => state.getCartItemCount);
-  
+  const orderType = useRestaurantStore(state => state.orderType);
+  const setOrderType = useRestaurantStore(state => state.setOrderType);
+
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
@@ -60,7 +63,7 @@ export default function CreateOrder() {
       spiceLevel: customizations.spiceLevel,
       dietPreference: customizations.dietPreference,
     });
-    
+
     setShowCustomization(false);
     setSelectedItem(null);
   }, [selectedItem, addToCart]);
@@ -68,7 +71,7 @@ export default function CreateOrder() {
   const handleRemoveItem = useCallback((itemId: string) => {
     const cartItem = cart.find((item) => item.itemId === itemId);
     if (!cartItem) return;
-    
+
     if (cartItem.quantity === 1) {
       removeFromCart(itemId);
     } else {
@@ -86,7 +89,7 @@ export default function CreateOrder() {
   }, [params.tableId, router]);
 
   const handleBack = useCallback(() => router.back(), [router]);
-  
+
   const renderItem = useCallback(({ item }: { item: any }) => (
     <MenuItemCard
       name={item.name}
@@ -131,6 +134,21 @@ export default function CreateOrder() {
         </Pressable>
       </View>
 
+      {/* Order Type Toggle */}
+      <View style={styles.orderTypeRow}>
+        {(['dine-in', 'parcel'] as OrderType[]).map((type) => (
+          <Pressable
+            key={type}
+            style={[styles.orderTypePill, orderType === type && styles.orderTypePillActive]}
+            onPress={() => setOrderType(type)}
+          >
+            <Text style={[styles.orderTypePillText, orderType === type && styles.orderTypePillTextActive]}>
+              {type === 'dine-in' ? '🍽️ Dine-In' : '📦 Parcel'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <View style={styles.searchBar}>
         <Search size={20} color="#999" />
         <TextInput
@@ -170,8 +188,8 @@ export default function CreateOrder() {
       />
 
       {cart.length > 0 && (
-        <Pressable 
-          style={[styles.viewOrderButton, { bottom: Math.max(insets.bottom, 24) }]} 
+        <Pressable
+          style={[styles.viewOrderButton, { bottom: Math.max(insets.bottom, 24) }]}
           onPress={handleViewOrder}
         >
           <Text style={styles.viewOrderText}>
@@ -297,71 +315,6 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '600'
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    marginBottom: 16
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1d130c'
-  },
-  seeAll: {
-    fontSize: 14,
-    color: '#ff6a00',
-    fontWeight: '500'
-  },
-  menuList: {
-    gap: 16,
-    paddingHorizontal: 20
-  },
-  summaryCard: {
-    marginTop: 20,
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border
-  },
-  summaryTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textStrong,
-    marginBottom: 12
-  },
-  summaryItems: {
-    gap: 8
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  summaryText: {
-    fontSize: 13,
-    color: colors.text
-  },
-  summaryPrice: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textStrong
-  },
-  noteRow: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  noteInput: {
-    fontSize: 12,
-    color: colors.textStrong
-  },
   viewOrderButton: {
     position: 'absolute',
     bottom: 0,
@@ -386,5 +339,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFF'
-  }
+  },
+  orderTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  orderTypePill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  orderTypePillActive: {
+    backgroundColor: '#FFF1E6',
+    borderColor: '#ff6a00',
+  },
+  orderTypePillText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  orderTypePillTextActive: {
+    color: '#ff6a00',
+    fontWeight: '700',
+  },
 });

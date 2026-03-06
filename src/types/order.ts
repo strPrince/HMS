@@ -4,7 +4,7 @@
 
 export type OrderItemStatus = 'pending' | 'preparing' | 'ready';
 
-export type OrderStatus = 'pending' | 'in-kitchen' | 'ready' | 'billing' | 'completed';
+export type OrderStatus = 'pending' | 'in-kitchen' | 'ready' | 'billing' | 'served' | 'completed' | 'cancelled';
 
 export type OrderItem = {
   itemId: string;

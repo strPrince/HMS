@@ -6,6 +6,7 @@
 
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import AuthService from './auth.service';
 
 // Check if running in Expo Go
 const isExpoGo = Constants.appOwnership === 'expo';
@@ -78,7 +79,9 @@ class NotificationService {
       console.log('Expo Push Token:', this.expoPushToken);
 
       // Register token with backend
-      await AuthService.registerPushToken(this.expoPushToken);
+      if (this.expoPushToken) {
+        await AuthService.registerPushToken(this.expoPushToken);
+      }
 
       // Configure notification channel for Android
       if (Platform.OS === 'android') {

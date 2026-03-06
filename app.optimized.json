@@ -1,7 +1,3 @@
-/**
- * HMS Mobile App Configuration - Production Optimized
- * Enhanced with proper branding, permissions, and deployment settings
- */
 {
   "expo": {
     "name": "HMS - Hotel Management",

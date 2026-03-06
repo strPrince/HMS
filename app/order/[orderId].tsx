@@ -8,10 +8,12 @@ import { colors } from '../../constants/colors';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
 import { formatCurrency, formatTimeAgo } from '../../utils/helpers';
 import { useAuth } from '../../providers/AuthProvider';
+import TableService from '../../src/services/table.service';
+import OrderService from '../../src/services/order.service';
 
 export default function OrderDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
-  const { orders, tables, menuItems, getOrderItems, getOrderTotal, selectTable, updateOrder, moveOrderToBilling } = useRestaurantStore();
+  const { orders, tables, menuItems, getOrderItems, getOrderTotal, selectTable, updateOrder, refreshOrdersFromApi } = useRestaurantStore();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -21,6 +23,7 @@ export default function OrderDetails() {
   const [localItems, setLocalItems] = useState(order?.items || []);
   const [notes, setNotes] = useState(order?.notes || '');
   const [orderStatus, setOrderStatus] = useState(order?.status || 'in-kitchen');
+  const [processingBilling, setProcessingBilling] = useState(false);
 
   if (!order) {
     return (
@@ -55,7 +58,7 @@ export default function OrderDetails() {
 
   const handleAddMore = () => {
     selectTable(table || null);
-    router.push('/create-order');
+    router.push(`/create-order?tableId=${table?.id || order.tableId}`);
   };
 
   const handleUpdateQuantity = (itemId: string, delta: number) => {
@@ -116,12 +119,31 @@ export default function OrderDetails() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Continue',
-          onPress: () => {
-            moveOrderToBilling(orderId);
-            Alert.alert('Success', 'Order moved to billing', [
-              { text: 'OK', onPress: () => router.back() }
-            ]);
-          }
+          onPress: async () => {
+            if (processingBilling) return;
+            setProcessingBilling(true);
+
+            try {
+              if (table?.id) {
+                await TableService.updateTableStatus(table.id.replace(/^t/, ''), 'billing');
+              }
+
+              await OrderService.updateOrder(orderId.replace(/^o/, ''), { status: 'billing' });
+
+              // Update local store to billing state
+              updateOrder(orderId, { status: 'billing' });
+
+              await refreshOrdersFromApi();
+
+              Alert.alert('Success', 'Order moved to billing', [
+                { text: 'OK', onPress: () => router.push(`/generate-bill?orderId=${orderId}&tableId=${order.tableId}`) }
+              ]);
+            } catch (error) {
+              Alert.alert('Error', 'Failed to move order to billing. Please try again.');
+            } finally {
+              setProcessingBilling(false);
+            }
+          },
         }
       ]
     );
@@ -174,7 +196,7 @@ export default function OrderDetails() {
           <Text style={styles.statusTitle}>STATUS LOG</Text>
           {isEditing && orderStatus !== 'completed' && (
             <View style={styles.statusButtons}>
-              {['open', 'preparing', 'ready'].map((status) => (
+              {['pending', 'in-kitchen', 'ready'].map((status) => (
                 <Pressable
                   key={status}
                   style={[
@@ -194,10 +216,10 @@ export default function OrderDetails() {
             </View>
           )}
           <View style={styles.statusRow}>
-            <View style={[styles.statusDot, orderStatus === 'preparing' && styles.statusDotActive]} />
+            <View style={[styles.statusDot, orderStatus === 'in-kitchen' && styles.statusDotActive]} />
             <View style={styles.statusContent}>
-              <Text style={orderStatus === 'preparing' ? styles.statusTextPrimary : styles.statusTextPrimaryMuted}>
-                {orderStatus === 'preparing' ? 'Cooking' : orderStatus === 'ready' ? 'Ready' : 'Pending'}
+              <Text style={orderStatus === 'in-kitchen' ? styles.statusTextPrimary : styles.statusTextPrimaryMuted}>
+                {orderStatus === 'in-kitchen' ? 'Cooking' : orderStatus === 'ready' ? 'Ready' : 'Pending'}
               </Text>
               <Text style={styles.statusTextSecondary}>
                 {startedText}

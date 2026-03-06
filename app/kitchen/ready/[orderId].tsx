@@ -50,11 +50,8 @@ export default function KitchenReadyConfirmation() {
   }
 
   const undoReady = () => {
-    updateOrder(order.id, {
-      status: 'preparing',
-      items: order.items.map((item) => ({ ...item, status: 'new' })),
-    });
-    router.replace(`/kitchen/order/${order.id}`);
+    updateOrder(order.id, { status: 'in-kitchen' });
+    router.replace(`/(tabs)/kitchen`);
   };
 
   return (

@@ -7,6 +7,16 @@ import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'ax
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL, API_TIMEOUT } from '../config/api.config';
 
+/** Simple event emitter for auth events (e.g. forced logout on 401) */
+type Listener = () => void;
+class AuthEventEmitter {
+  private listeners: Record<string, Listener[]> = {};
+  on(event: string, fn: Listener) { (this.listeners[event] ??= []).push(fn); }
+  off(event: string, fn: Listener) { this.listeners[event] = (this.listeners[event] || []).filter(f => f !== fn); }
+  emit(event: string) { (this.listeners[event] || []).forEach(fn => fn()); }
+}
+export const authEvents = new AuthEventEmitter();
+
 const STORAGE_KEYS = {
   TOKEN: '@hms_auth_token',
   USER: '@hms_user_data',
@@ -44,9 +54,9 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid - clear storage
+      // Token expired or invalid - clear storage and notify AuthProvider
       await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
-      // You can emit an event here to redirect to login
+      authEvents.emit('logout');
     }
     return Promise.reject(error);
   }

@@ -1,7 +1,7 @@
-﻿{
+{
   "expo": {
-    "name": "expo-app",
-    "slug": "expo-app",
+    "name": "Saffron & Sage Staff App",
+    "slug": "saffron-sage-staff",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -15,16 +15,30 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.saffronandsage.staff"
     },
     "android": {
+      "package": "com.saffronandsage.staff",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
-      "favicon": "./assets/images/favicon.png"
-    }
+      "favicon": "./assets/images/favicon.png",
+      "bundler": "metro",
+      "output": "server"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#F97316"
+        }
+      ]
+    ]
   }
 }

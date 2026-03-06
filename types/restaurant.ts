@@ -28,7 +28,10 @@ export type OrderItem = {
   specialInstructions?: string;
 };
 
-export type OrderStatus = 'pending' | 'in-kitchen' | 'ready' | 'billing' | 'completed';
+export type OrderStatus = 'pending' | 'in-kitchen' | 'ready' | 'billing' | 'served' | 'completed' | 'cancelled';
+
+export type OrderType = 'dine-in' | 'parcel';
+export type PaymentMethod = 'cash' | 'card' | 'upi';
 
 export type Order = {
   id: string;
@@ -40,4 +43,6 @@ export type Order = {
   notes?: string;
   waiterName?: string;
   discountPercent?: number;
+  orderType?: OrderType;
+  paymentMethod?: PaymentMethod;
 };

@@ -5,16 +5,17 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter, useSegments } from 'expo-router';
-import AuthService, { LoginResponse } from '../services/auth.service';
-import SocketService from '../services/socket.service';
-import NotificationService from '../services/notification.service';
+import AuthService, { LoginResponse } from '../src/services/auth.service';
+import SocketService from '../src/services/socket.service';
+import NotificationService from '../src/services/notification.service';
 
 type User = {
   id: string;
   name: string;
   phone: string;
-  role: 'waiter' | 'cook';
-  manager_id: string;
+  role: 'waiter' | 'cook' | 'manager';
+  manager_id?: string;
+  restaurantId?: string;
 };
 
 type AuthContextValue = {
@@ -77,7 +78,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(response.user);
         
         // Initialize services
-        SocketService.connect(response.user.id, response.user.role);
+        if (response.user.role === 'waiter' || response.user.role === 'cook') {
+          SocketService.connect(response.user.id, response.user.role);
+        }
         NotificationService.registerForPushNotifications();
         
         return true;
