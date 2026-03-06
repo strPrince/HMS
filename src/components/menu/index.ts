@@ -2,5 +2,5 @@
  * Menu Components Exports
  */
 
-export { MenuItemCard } from './MenuItemCard';
-export { ItemCustomizationModal } from './ItemCustomizationModal';
+export { default as MenuItemCard } from './MenuItemCard';
+export { default as ItemCustomizationModal } from './ItemCustomizationModal';

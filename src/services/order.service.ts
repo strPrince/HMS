@@ -8,21 +8,22 @@ import { API_ENDPOINTS } from '../config/api.config';
 import type { Order } from '../types/order';
 
 export interface CreateOrderRequest {
-  table_id: string;
-  order_type: 'dine-in';
+  tableId: number;
+  orderType: 'dine_in' | 'parcel';
   items: {
-    menu_item_id: string;
+    menuItemId: number;
     quantity: number;
-    customizations?: {
-      spiceLevel?: string;
-      dietPreference?: string;
-      notes?: string;
-    };
+    specialInstructions?: string;
   }[];
-  special_instructions?: string;
+  customerName?: string;
+  customerPhone?: string;
 }
 
 class OrderService {
+  private extractData(response: any) {
+    return response?.data?.data ?? response?.data;
+  }
+
   /**
    * Get all orders with optional filters
    */
@@ -33,7 +34,7 @@ class OrderService {
   }) {
     try {
       const response = await apiClient.get(API_ENDPOINTS.ORDERS.GET_ALL, { params });
-      return response.data;
+      return this.extractData(response);
     } catch (error) {
       console.error('Failed to fetch orders:', error);
       throw error;
@@ -48,7 +49,7 @@ class OrderService {
       const response = await apiClient.get(API_ENDPOINTS.ORDERS.KITCHEN_QUEUE, {
         params: { type },
       });
-      return response.data;
+      return this.extractData(response);
     } catch (error) {
       console.error('Failed to fetch kitchen orders:', error);
       throw error;
@@ -61,7 +62,7 @@ class OrderService {
   async getOrderById(orderId: string) {
     try {
       const response = await apiClient.get(API_ENDPOINTS.ORDERS.GET_BY_ID(orderId));
-      return response.data;
+      return this.extractData(response);
     } catch (error) {
       console.error('Failed to fetch order:', error);
       throw error;
@@ -74,7 +75,7 @@ class OrderService {
   async createOrder(orderData: CreateOrderRequest) {
     try {
       const response = await apiClient.post(API_ENDPOINTS.ORDERS.CREATE, orderData);
-      return response.data;
+      return this.extractData(response);
     } catch (error) {
       console.error('Failed to create order:', error);
       throw error;
@@ -82,27 +83,14 @@ class OrderService {
   }
 
   /**
-   * Mark order as ready (Cook only)
+   * Update order (status/customer details)
    */
-  async markOrderReady(orderId: string) {
+  async updateOrder(orderId: string, payload: { status?: string; customerName?: string; customerPhone?: string }) {
     try {
-      const response = await apiClient.put(API_ENDPOINTS.ORDERS.MARK_READY(orderId));
-      return response.data;
+      const response = await apiClient.put(API_ENDPOINTS.ORDERS.UPDATE(orderId), payload);
+      return this.extractData(response);
     } catch (error) {
-      console.error('Failed to mark order as ready:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Mark order as billing (Waiter only)
-   */
-  async markOrderBilling(orderId: string) {
-    try {
-      const response = await apiClient.put(API_ENDPOINTS.ORDERS.MARK_BILLING(orderId));
-      return response.data;
-    } catch (error) {
-      console.error('Failed to mark order as billing:', error);
+      console.error('Failed to update order:', error);
       throw error;
     }
   }

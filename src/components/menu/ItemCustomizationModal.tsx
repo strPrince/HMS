@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Plus, Minus } from 'lucide-react-native';
-import { formatCurrency } from '../utils/helpers';
+import { formatCurrency } from '../../utils/formatCurrency';
 
 type ItemCustomizationModalProps = {
   visible: boolean;

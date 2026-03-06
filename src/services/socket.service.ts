@@ -14,7 +14,7 @@ class SocketService {
   /**
    * Connect to Socket.io server
    */
-  async connect(userId: string, role: 'waiter' | 'cook') {
+  async connect(userId: string, role: 'waiter' | 'cook' | 'manager') {
     if (this.socket?.connected) {
       console.log('Socket already connected');
       return;
@@ -22,21 +22,24 @@ class SocketService {
 
     try {
       const token = await storage.getToken();
-      
+
       this.socket = io(SOCKET_URL, {
         auth: {
           token,
         },
-        transports: ['websocket'],
+        // Use polling first so it can negotiate gracefully before upgrading.
+        // Websocket-only fails immediately when backend is unavailable.
+        transports: ['polling', 'websocket'],
         reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionAttempts: 5,
+        reconnectionDelay: 2000,
+        reconnectionAttempts: 3,
+        timeout: 10000,
       });
 
       this.socket.on('connect', () => {
         console.log('Socket connected:', this.socket?.id);
         this.isConnected = true;
-        
+
         // Join role-specific room
         this.socket?.emit('join:room', { userId, role });
       });
@@ -46,12 +49,13 @@ class SocketService {
         this.isConnected = false;
       });
 
+      // Use warn instead of error to avoid triggering Expo's dev overlay
       this.socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error.message);
+        console.warn('Socket connection unavailable (backend offline?):', error.message);
       });
 
     } catch (error) {
-      console.error('Failed to connect socket:', error);
+      console.warn('Failed to initialize socket service:', error);
     }
   }
 

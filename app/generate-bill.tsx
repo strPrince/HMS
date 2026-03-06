@@ -1,11 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View, Alert, Share } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Printer, Share2 } from 'lucide-react-native';
 import { colors } from '../constants/colors';
+import { RESTAURANT } from '../constants/restaurant';
 import { useRestaurantStore } from '../store/useRestaurantStore';
 import { formatCurrency, formatDate } from '../utils/helpers';
+import type { PaymentMethod } from '../types/restaurant';
+import OrderService from '../src/services/order.service';
+import TableService from '../src/services/table.service';
 
 type Params = {
   tableId?: string;
@@ -44,11 +48,15 @@ export default function GenerateBill() {
   const getOrderItems = useRestaurantStore((state) => state.getOrderItems);
   const getOrderTotal = useRestaurantStore((state) => state.getOrderTotal);
   const completeOrder = useRestaurantStore((state) => state.completeOrder);
+  const updateTable = useRestaurantStore((state) => state.updateTable);
+  const refreshOrdersFromApi = useRestaurantStore((state) => state.refreshOrdersFromApi);
 
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [discountInput, setDiscountInput] = useState('0');
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
 
   const discountPercent = useMemo(() => {
     const parsed = Number(discountInput.replace(/[^0-9.]/g, ''));
@@ -106,7 +114,7 @@ export default function GenerateBill() {
     () => Math.max(0, subtotal - discountAmount),
     [subtotal, discountAmount]
   );
-  const tax = useMemo(() => taxableAmount * 0.1, [taxableAmount]);
+  const tax = useMemo(() => taxableAmount * RESTAURANT.taxRate, [taxableAmount]);
   const grandTotal = useMemo(
     () => taxableAmount + tax,
     [taxableAmount, tax]
@@ -117,12 +125,75 @@ export default function GenerateBill() {
     console.log('Printing bill for order:', billingOrder.id);
   }, [billingOrder]);
 
-  const handleShare = useCallback(() => {
+  const handleShare = useCallback(async () => {
     if (!billingOrder) return;
-    console.log('Sharing bill for order:', billingOrder.id);
-  }, [billingOrder]);
+    const lines: string[] = [
+      RESTAURANT.name,
+      RESTAURANT.address,
+      RESTAURANT.phone,
+      '─'.repeat(30),
+      `Bill #${billingOrder.id.replace(/^o/, '')}  |  ${formatDate(billingOrder.createdAt)}`,
+      `Table: ${billingOrder.tableId.replace(/^t/, '')}`,
 
-  // Payment completion removed - Only manager can complete orders from web dashboard
+      '─'.repeat(30),
+    ];
+    orderItems.forEach(({ item, quantity }) => {
+      lines.push(`${item.name}  x${quantity}  ${formatCurrency(item.price * quantity)}`);
+    });
+    lines.push('─'.repeat(30));
+    lines.push(`Subtotal:  ${formatCurrency(subtotal)}`);
+    if (discountPercent > 0) {
+      lines.push(`Discount (${discountPercent}%):  -${formatCurrency(discountAmount)}`);
+    }
+    lines.push(`${RESTAURANT.taxLabel}:  ${formatCurrency(tax)}`);
+    lines.push(`Grand Total:  ${formatCurrency(grandTotal)}`);
+    lines.push('─'.repeat(30));
+    lines.push('Thank you for dining with us!');
+
+    try {
+      await Share.share({ message: lines.join('\n') });
+    } catch (error) {
+      console.error('Share failed:', error);
+    }
+  }, [billingOrder, orderItems, subtotal, discountPercent, discountAmount, tax, grandTotal]);
+
+  const handleMarkAsPaid = useCallback(() => {
+    if (!billingOrder || markingPaid) return;
+
+    Alert.alert(
+      'Mark as Paid',
+      `Confirm payment received for ${formatCurrency(grandTotal)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            try {
+              setMarkingPaid(true);
+
+              await OrderService.updateOrder(billingOrder.id.replace(/^o/, ''), { status: 'completed' });
+
+              if (billingOrder.tableId) {
+                await TableService.updateTableStatus(billingOrder.tableId.replace(/^t/, ''), 'available');
+                updateTable(billingOrder.tableId, { status: 'available', currentOrderId: undefined });
+              }
+
+              completeOrder(billingOrder.id, discountPercent, paymentMethod);
+              await refreshOrdersFromApi();
+
+              Alert.alert('Success', 'Payment marked as completed.', [
+                { text: 'OK', onPress: () => router.replace('/(tabs)/tables') },
+              ]);
+            } catch (error) {
+              Alert.alert('Error', 'Failed to complete payment. Please try again.');
+            } finally {
+              setMarkingPaid(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [billingOrder, markingPaid, grandTotal, discountPercent, paymentMethod, updateTable, completeOrder, refreshOrdersFromApi, router]);
 
   const renderBillItem = useCallback(
     ({ item }: { item: BillItem }) => (
@@ -178,13 +249,13 @@ export default function GenerateBill() {
             </View>
 
             <View style={styles.billHeader}>
-              <Text style={styles.restaurantName}>Delicious Bites</Text>
+              <Text style={styles.restaurantName}>{RESTAURANT.name}</Text>
               <Text style={styles.restaurantAddress}>
-                123 Food Street, City
+                {RESTAURANT.address}
               </Text>
-              <Text style={styles.restaurantPhone}>+1 234 567 8900</Text>
+              <Text style={styles.restaurantPhone}>{RESTAURANT.phone}</Text>
               <View style={styles.billInfo}>
-                <Text style={styles.billNumber}>Bill #{billingOrder.id}</Text>
+                <Text style={styles.billNumber}>Bill #{billingOrder.id.replace(/^o/, '')}</Text>
                 <Text style={styles.billDate}>
                   {formatDate(billingOrder.createdAt)}
                 </Text>
@@ -192,7 +263,7 @@ export default function GenerateBill() {
             </View>
 
             <View style={styles.infoSection}>
-              <Text style={styles.infoText}>Table: {billingOrder.tableId}</Text>
+              <Text style={styles.infoText}>Table: {billingOrder.tableId.replace(/^t/, '')}</Text>
               <Text style={styles.infoText}>
                 Items: {orderItems.length} • Guests billed
               </Text>
@@ -244,9 +315,9 @@ export default function GenerateBill() {
               )}
 
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Tax (10%)</Text>
+                <Text style={styles.totalLabel}>{RESTAURANT.taxLabel}</Text>
                 <Text style={styles.totalValue}>
-                  {formatCurrency(taxableAmount * 0.1)}
+                  {formatCurrency(tax)}
                 </Text>
               </View>
 
@@ -259,9 +330,21 @@ export default function GenerateBill() {
             </View>
 
             <View style={styles.paymentSection}>
-              <Text style={styles.paymentTitle}>Payment Information</Text>
-              <Text style={styles.paymentText}>Mode: Cash / Card</Text>
-              <Text style={styles.paymentText}>
+              <Text style={styles.paymentTitle}>Payment Method</Text>
+              <View style={styles.paymentMethodRow}>
+                {(['cash', 'card', 'upi'] as PaymentMethod[]).map((method) => (
+                  <Pressable
+                    key={method}
+                    style={[styles.paymentMethodPill, paymentMethod === method && styles.paymentMethodPillActive]}
+                    onPress={() => setPaymentMethod(method)}
+                  >
+                    <Text style={[styles.paymentMethodText, paymentMethod === method && styles.paymentMethodTextActive]}>
+                      {method === 'cash' ? '💵 Cash' : method === 'card' ? '💳 Card' : '📱 UPI'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.paymentSubtext}>
                 Thank you for dining with us!
               </Text>
             </View>
@@ -277,10 +360,20 @@ export default function GenerateBill() {
               </Pressable>
             </View>
 
+            <Pressable
+              style={[styles.payButton, markingPaid && styles.payButtonDisabled]}
+              onPress={handleMarkAsPaid}
+              disabled={markingPaid}
+            >
+              <Text style={styles.payButtonText}>
+                {markingPaid ? 'Processing...' : 'Mark as Paid'}
+              </Text>
+            </Pressable>
+
             {/* Manager-only completion note */}
             <View style={styles.managerNote}>
               <Text style={styles.managerNoteText}>
-                ℹ️ Only the manager can complete payment and close this order from the web dashboard.
+                ℹ️ Payment completion updates order and table state in real-time.
               </Text>
             </View>
           </View>
@@ -514,12 +607,38 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  paymentText: {
+  paymentMethodRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  paymentMethodPill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  paymentMethodPillActive: {
+    backgroundColor: '#E8FAE3',
+    borderColor: colors.success,
+  },
+  paymentMethodText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.mutedDark,
+  },
+  paymentMethodTextActive: {
+    color: '#15803D',
+    fontWeight: '700',
+  },
+  paymentSubtext: {
     fontSize: 13,
     color: colors.muted,
-    marginBottom: 4,
   },
   actionsContainer: {
     flexDirection: 'row',
@@ -565,6 +684,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.surface,
     marginLeft: 8,
+  },
+  payButton: {
+    backgroundColor: colors.success,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  payButtonDisabled: {
+    opacity: 0.6,
+  },
+  payButtonText: {
+    color: colors.surface,
+    fontSize: 16,
+    fontWeight: '700',
   },
   managerNote: {
     backgroundColor: '#FFF4E6',

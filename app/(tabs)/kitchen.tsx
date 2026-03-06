@@ -11,6 +11,7 @@ import {
   Wifi,
 } from 'lucide-react-native';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
+import OrderService from '../../src/services/order.service';
 
 type QueueFilter = 'all' | 'dine-in' | 'parcel';
 type KitchenStatus = 'open' | 'preparing' | 'ready';
@@ -42,18 +43,12 @@ const formatElapsed = (createdAt: string, now: number) => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 };
 
-const getOrderType = (tableId: string, notes?: string): 'dine-in' | 'parcel' => {
-  const note = notes?.toLowerCase() || '';
-  if (tableId.startsWith('p') || note.includes('parcel') || note.includes('takeaway')) {
-    return 'parcel';
-  }
-  return 'dine-in';
-};
+
 
 export default function Kitchen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { orders, tables, getOrderItems, updateOrder } = useRestaurantStore();
+  const { orders, tables, getOrderItems, updateOrder, refreshOrdersFromApi } = useRestaurantStore();
   const [filter, setFilter] = useState<QueueFilter>('all');
   const [now, setNow] = useState(Date.now());
 
@@ -71,7 +66,7 @@ export default function Kitchen() {
     return activeOrders
       .map((order) => {
         const table = tables.find((entry) => entry.id === order.tableId);
-        const orderType = getOrderType(order.tableId, order.notes);
+        const orderType = order.orderType || 'dine-in';
         const status: KitchenStatus =
           order.status === 'ready' ? 'ready' : 'open';
         const elapsedMinutes = Math.max(
@@ -118,14 +113,20 @@ export default function Kitchen() {
     router.push(`/kitchen/order/${orderId}`);
   };
 
-  const handleMarkReady = (orderId: string) => {
+  const handleMarkReady = async (orderId: string) => {
     const order = orders.find((entry) => entry.id === orderId);
     if (!order) return;
 
-    updateOrder(orderId, {
-      status: 'ready',
-      items: order.items.map((item) => ({ ...item, status: 'ready' })),
-    });
+    try {
+      await OrderService.updateOrder(orderId.replace(/^o/, ''), { status: 'ready' });
+      await refreshOrdersFromApi();
+    } catch (error) {
+      // Fallback local update if network fails
+      updateOrder(orderId, {
+        status: 'ready',
+        items: order.items.map((item) => ({ ...item, status: 'ready' })),
+      });
+    }
 
     router.push(`/kitchen/ready/${orderId}`);
   };

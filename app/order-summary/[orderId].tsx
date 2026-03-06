@@ -13,19 +13,21 @@ import { showToast } from '../../src/hooks/useToast';
 export default function OrderSummary() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const params = useLocalSearchParams();
-  const { 
-    cart, 
-    menuItems, 
-    updateCartItem, 
-    removeFromCart, 
+  const {
+    cart,
+    menuItems,
+    updateCartItem,
+    removeFromCart,
     submitOrderToKitchen,
     getCartTotal,
     tables
   } = useRestaurantStore();
+  const orderType = useRestaurantStore((state) => state.orderType);
   const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [showConfirm, setShowConfirm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Get table ID from URL params (for new orders)
   const tableId = params.tableId as string;
@@ -45,7 +47,7 @@ export default function OrderSummary() {
   const handleUpdateQuantity = (itemId: string, delta: number) => {
     const cartItem = cart.find((item) => item.itemId === itemId);
     if (!cartItem) return;
-    
+
     const newQuantity = cartItem.quantity + delta;
     if (newQuantity <= 0) {
       removeFromCart(itemId);
@@ -66,7 +68,9 @@ export default function OrderSummary() {
     setShowConfirm(true);
   };
 
-  const confirmSendToKitchen = () => {
+  const confirmSendToKitchen = async () => {
+    if (submitting) return;
+
     if (!tableId) {
       showToast.error('Table not selected');
       return;
@@ -77,8 +81,9 @@ export default function OrderSummary() {
       return;
     }
 
-    const newOrder = submitOrderToKitchen(tableId, user?.name);
-    
+    setSubmitting(true);
+    const newOrder = await submitOrderToKitchen(tableId, user?.name);
+
     if (newOrder) {
       setShowConfirm(false);
       showToast.success('Order sent to kitchen successfully!');
@@ -86,6 +91,7 @@ export default function OrderSummary() {
     } else {
       showToast.error('Failed to submit order');
     }
+    setSubmitting(false);
   };
 
   if (!tableId || !table) {
@@ -128,7 +134,7 @@ export default function OrderSummary() {
           </Pressable>
           <View style={styles.headerCenter}>
             <Text style={styles.tableTitle}>Table {table.label}</Text>
-            <Text style={styles.dineIn}>Dine In</Text>
+            <Text style={styles.dineIn}>{orderType === 'parcel' ? 'Parcel' : 'Dine In'}</Text>
           </View>
           <Pressable style={styles.addButton} onPress={handleAddMore}>
             <Plus size={20} color="#FF6B35" />
@@ -208,12 +214,12 @@ export default function OrderSummary() {
       {/* Confirmation Dialog */}
       <ConfirmDialog
         visible={showConfirm}
-        title="Send to Kitchen?"
+        title={submitting ? 'Submitting Order...' : 'Send to Kitchen?'}
         message={`Are you sure you want to send ${totalItems} items to the kitchen for Table ${table.label}?`}
-        confirmText="Send Order"
+        confirmText={submitting ? 'Please wait...' : 'Send Order'}
         cancelText="Cancel"
         onConfirm={confirmSendToKitchen}
-        onCancel={() => setShowConfirm(false)}
+        onCancel={() => !submitting && setShowConfirm(false)}
       />
     </View>
   );

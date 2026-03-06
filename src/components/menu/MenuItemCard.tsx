@@ -1,8 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Plus, Minus } from 'lucide-react-native';
-import { colors } from '../constants/colors';
-import { formatCurrency } from '../utils/helpers';
+import { formatCurrency } from '../../utils/formatCurrency';
 
 type MenuItemCardProps = {
   name: string;

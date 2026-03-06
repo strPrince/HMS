@@ -1,15 +1,17 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { useRouter, useSegments } from 'expo-router';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AuthService, { LoginResponse } from '../src/services/auth.service';
 import SocketService from '../src/services/socket.service';
 import NotificationService from '../src/services/notification.service';
+import { useRestaurantStore } from '../store/useRestaurantStore';
+import { authEvents } from '../src/services/api';
 
 type User = {
   id: string;
   name: string;
   phone: string;
-  role: 'waiter' | 'cook';
-  manager_id: string;
+  role: 'waiter' | 'cook' | 'manager';
+  manager_id?: string;
+  restaurantId?: string;
 };
 
 type AuthContextValue = {
@@ -21,97 +23,120 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+/** True when running in Node (SSR) rather than in a browser / native app */
+const isSSR = typeof window === 'undefined';
+
+/** Ensure id and restaurantId are always strings */
+const normalizeUser = (u: any): User | null => {
+  if (!u) return null;
+  return {
+    ...u,
+    id: String(u.id),
+    restaurantId: u.restaurantId ? String(u.restaurantId) : undefined,
+  };
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
-  const segments = useSegments();
+  // Start false on SSR so the server never renders the loading spinner;
+  // on the client we start true and flip to false once checkAuth finishes.
+  const [isLoading, setIsLoading] = useState(!isSSR);
+  const loadInitialData = useRestaurantStore((state) => state.loadInitialData);
+  const didCheck = useRef(false);
 
-  // Check if user is authenticated on mount
+  // ── Check if user is authenticated on mount ───────────────────────
   useEffect(() => {
-    checkAuth();
+    if (didCheck.current) return;   // prevent double-fire in StrictMode
+    didCheck.current = true;
+
+    let cancelled = false;
+
+    // Safety timeout: if checkAuth hasn't resolved in 4 s, unblock the UI.
+    const timeout = setTimeout(() => {
+      if (!cancelled) {
+        console.warn('[AuthProvider] checkAuth timed out – unblocking UI');
+        setIsLoading(false);
+      }
+    }, 4000);
+
+    (async () => {
+      let currentUser: any = null;
+      try {
+        currentUser = await AuthService.getCurrentUser();
+        if (!cancelled && currentUser) {
+          setUser(normalizeUser(currentUser));
+        }
+      } catch (err) {
+        console.warn('[AuthProvider] checkAuth error:', err);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+        clearTimeout(timeout);
+      }
+
+      // Load data & connect socket in the background (non-blocking)
+      if (currentUser && !cancelled) {
+        loadInitialData().catch(console.warn);
+        SocketService.connect(String(currentUser.id), currentUser.role);
+        NotificationService.registerForPushNotifications();
+      }
+    })();
+
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Listen for forced logout (401 from API interceptor) ───────────
+  useEffect(() => {
+    const handler = () => {
+      setUser(null);
+      SocketService.disconnect();
+    };
+    authEvents.on('logout', handler);
+    return () => { authEvents.off('logout', handler); };
   }, []);
 
-  // Handle navigation based on auth state
-  useEffect(() => {
-    if (isLoading) return;
-
-    const inAuthGroup = segments[0] === 'phone-login' || segments[0] === 'pin';
-    
-    if (!user && !inAuthGroup) {
-      // Redirect to login
-      router.replace('/phone-login');
-    } else if (user && inAuthGroup) {
-      // Redirect to appropriate tab based on role
-      if (user.role === 'waiter') {
-        router.replace('/(tabs)/tables');
-      } else if (user.role === 'cook') {
-        router.replace('/(tabs)/kitchen');
-      }
-    }
-  }, [user, segments, isLoading]);
-
-  const checkAuth = async () => {
-    try {
-      const currentUser = await AuthService.getCurrentUser();
-      if (currentUser) {
-        setUser(currentUser);
-        
-        // Initialize Socket.io connection
-        SocketService.connect(currentUser.id, currentUser.role);
-        
-        // Register for push notifications
-        NotificationService.registerForPushNotifications();
-      }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const signIn = async (phone: string, pin: string): Promise<boolean> => {
+  // ── signIn ────────────────────────────────────────────────────────
+  const signIn = useCallback(async (phone: string, pin: string): Promise<boolean> => {
     try {
       const response: LoginResponse = await AuthService.login(phone, pin);
-      
+
       if (response.success && response.user) {
-        setUser(response.user);
-        
-        // Initialize Socket.io connection
-        SocketService.connect(response.user.id, response.user.role);
-        
-        // Register for push notifications
+        const normalized = normalizeUser(response.user)!;
+        setUser(normalized);
+
+        // Load data in background
+        loadInitialData().catch(console.warn);
+        SocketService.connect(normalized.id, normalized.role);
         NotificationService.registerForPushNotifications();
-        
+
         return true;
       }
-      
+
       return false;
     } catch (error: any) {
       console.error('Sign in failed:', error);
       throw error;
     }
-  };
+  }, [loadInitialData]);
 
-  const signOut = async () => {
+  // ── signOut (no useRouter – navigation handled by index.tsx) ──────
+  const signOut = useCallback(async () => {
     try {
       await AuthService.logout();
       SocketService.disconnect();
       setUser(null);
-      router.replace('/phone-login');
+      // index.tsx <Redirect> will send user to /phone-login
     } catch (error) {
       console.error('Sign out failed:', error);
     }
-  };
+  }, []);
 
-  const value = useMemo<AuthContextValue>(() => {
-    return {
-      user,
-      isLoading,
-      signIn,
-      signOut,
-    };
-  }, [user, isLoading]);
+  // ── Context value ─────────────────────────────────────────────────
+  const value = useMemo<AuthContextValue>(() => ({
+    user,
+    isLoading,
+    signIn,
+    signOut,
+  }), [user, isLoading, signIn, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

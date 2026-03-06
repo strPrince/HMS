@@ -1,9 +1,4 @@
-import type { Order, MenuItem, TableStatus } from '../types/restaurant';
-
-// Generate unique ID
-export const generateId = (prefix: string = ''): string => {
-  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).substr(2, 9)}`;
-};
+import type { Order, TableStatus } from '../types/restaurant';
 
 // Format currency (INR)
 export const formatCurrency = (amount: number): string => {
@@ -21,7 +16,7 @@ export const formatDate = (dateString: string): string => {
   });
 };
 
-// Format relative time (e.g. 12h ago)
+// Format relative time (e.g. 12m ago, 3h ago)
 export const formatTimeAgo = (dateString: string): string => {
   const now = Date.now();
   const date = new Date(dateString).getTime();
@@ -43,43 +38,26 @@ export const formatDuration = (minutes: number | undefined): string => {
   return `${hrs}h ${mins}m`;
 };
 
-// Calculate order total
-export const calculateOrderTotal = (order: Order, menuItems: MenuItem[]): number => {
-  return order.items.reduce((total, { itemId, quantity }) => {
-    const item = menuItems.find((mi) => mi.id === itemId);
-    return total + (item?.price || 0) * quantity;
-  }, 0);
-};
-
-// Get order status text
+// Get order status display text
 export const getOrderStatusText = (status: Order['status']): string => {
   const statusMap: Record<Order['status'], string> = {
-    open: 'Open',
-    preparing: 'Preparing',
+    pending: 'Pending',
+    'in-kitchen': 'In Kitchen',
     ready: 'Ready',
-    closed: 'Closed',
+    billing: 'Billing',
+    served: 'Served',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
   };
-  return statusMap[status] || status;
+  return statusMap[status] ?? status;
 };
 
-// Get table status text
+// Get table status display text
 export const getTableStatusText = (status: TableStatus): string => {
   const statusMap: Record<TableStatus, string> = {
-    free: 'Free',
+    available: 'Available',
     occupied: 'Occupied',
-    ready: 'Ready',
+    billing: 'Billing',
   };
-  return statusMap[status] || status;
-};
-
-// Validate email
-export const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-// Validate phone number
-export const isValidPhone = (phone: string): boolean => {
-  const phoneRegex = /^\d{10}$/;
-  return phoneRegex.test(phone.replace(/\D/g, ''));
+  return statusMap[status] ?? status;
 };

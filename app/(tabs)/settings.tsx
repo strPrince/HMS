@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { colors } from '../../constants/colors';
+import { RESTAURANT } from '../../constants/restaurant';
 import { useAuth } from '../../providers/AuthProvider';
 import { ChevronRight, LogOut, Store, FileText, Crown } from 'lucide-react-native';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
@@ -19,13 +20,13 @@ export default function Settings() {
 
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{user?.initials || 'WT'}</Text>
+          <Text style={styles.avatarText}>{user?.name ? user.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase() : 'WT'}</Text>
         </View>
         <View style={styles.profileInfo}>
           <Text style={styles.profileName}>{user?.name || 'Waiter'}</Text>
           <View style={styles.roleRow}>
             <View style={styles.roleIcon} />
-            <Text style={styles.profileRole}>WAITER</Text>
+            <Text style={styles.profileRole}>{user?.role?.toUpperCase() || 'STAFF'}</Text>
           </View>
         </View>
         <ChevronRight size={18} color={colors.mutedDark} />
@@ -38,14 +39,14 @@ export default function Settings() {
             <Store size={16} color={colors.mutedDark} />
             <Text style={styles.rowLabel}>Name</Text>
           </View>
-          <Text style={styles.rowValue}>Saffron & Sage</Text>
+          <Text style={styles.rowValue}>{RESTAURANT.name}</Text>
         </View>
         <View style={styles.row}>
           <View style={styles.rowLeft}>
             <FileText size={16} color={colors.mutedDark} />
             <Text style={styles.rowLabel}>GSTIN</Text>
           </View>
-          <Text style={styles.rowValue}>29ABCDE1234F1Z5</Text>
+          <Text style={styles.rowValue}>{RESTAURANT.gstin}</Text>
         </View>
         <View style={[styles.row, styles.rowLast]}>
           <View style={styles.rowLeft}>
@@ -53,7 +54,7 @@ export default function Settings() {
             <Text style={styles.rowLabel}>Plan</Text>
           </View>
           <View style={styles.planPill}>
-            <Text style={styles.planText}>PREMIUM</Text>
+            <Text style={styles.planText}>{RESTAURANT.plan}</Text>
           </View>
         </View>
       </View>
@@ -73,10 +74,7 @@ export default function Settings() {
       {user ? (
         <Pressable
           style={styles.logoutButton}
-          onPress={() => {
-            signOut();
-            router.replace('/profile-select');
-          }}
+          onPress={() => signOut()}
         >
           <LogOut size={18} color={colors.danger} />
           <Text style={styles.logoutText}>Logout</Text>

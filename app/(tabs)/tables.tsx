@@ -10,13 +10,13 @@ import { useAuth } from '../../providers/AuthProvider';
 
 type FilterKey = 'all' | 'occupied' | 'billing';
 
-const TableCard = memo(function TableCard({ 
-  table, 
-  activeOrder, 
-  onPress 
-}: { 
-  table: any; 
-  activeOrder: any; 
+const TableCard = memo(function TableCard({
+  table,
+  activeOrder,
+  onPress
+}: {
+  table: any;
+  activeOrder: any;
   onPress: () => void;
 }) {
   const isAvailable = table.status === 'available';
@@ -80,6 +80,7 @@ export default function Tables() {
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<FilterKey>('all');
 
+
   const filteredTables = useMemo(() => {
     if (filter === 'all') return tables;
     return tables.filter((table) => table.status === filter);
@@ -87,9 +88,9 @@ export default function Tables() {
 
   const handleTablePress = useCallback((table: any) => {
     selectTable(table);
-    
+
     const activeOrder = getTableActiveOrder(table.id);
-    
+
     if (activeOrder) {
       if (activeOrder.status === 'billing') {
         router.push(`/generate-bill?tableId=${table.id}`);
@@ -131,7 +132,16 @@ export default function Tables() {
             <Bell size={20} color="#666" />
           </Pressable>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{user?.initials || 'JD'}</Text>
+            <Text style={styles.avatarText}>
+              {user?.name
+                ? user.name
+                  .split(' ')
+                  .map((part) => part[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase()
+                : 'JD'}
+            </Text>
           </View>
         </View>
       </View>

@@ -6,7 +6,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { AlertTriangle, RefreshCw } from 'lucide-react-native';
-import { colors } from '../../constants/colors';
+import { colors } from '../../../constants/colors';
 
 interface Props {
   children: ReactNode;
@@ -63,7 +63,7 @@ class ErrorBoundary extends Component<Props, State> {
         <View style={styles.container}>
           <ScrollView contentContainerStyle={styles.content}>
             <View style={styles.iconContainer}>
-              <AlertTriangle size={48} color={colors.error} />
+              <AlertTriangle size={48} color={colors.danger} />
             </View>
 
             <Text style={styles.title}>Something went wrong</Text>
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: colors.errorLight,
+    backgroundColor: '#FEE2E2',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -132,13 +132,13 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textMuted,
+    color: colors.muted,
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 24,
   },
   errorBox: {
-    backgroundColor: colors.errorLight,
+    backgroundColor: '#FEE2E2',
     borderRadius: 8,
     padding: 16,
     marginBottom: 24,
@@ -146,13 +146,13 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 12,
-    color: colors.error,
+    color: colors.danger,
     fontFamily: 'monospace',
     marginBottom: 8,
   },
   stackText: {
     fontSize: 10,
-    color: colors.textMuted,
+    color: colors.muted,
     fontFamily: 'monospace',
   },
   button: {

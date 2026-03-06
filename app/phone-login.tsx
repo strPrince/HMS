@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Utensils, Phone, Lock } from 'lucide-react-native';
 import { colors } from '../constants/colors';
+import { RESTAURANT } from '../constants/restaurant';
 import { useAuth } from '../providers/AuthProvider';
 
 const IS_WEB = Platform.OS === 'web';
@@ -54,26 +55,15 @@ export default function PhoneLogin() {
 
     try {
       const success = await signIn(phone, pin);
-      
+
       if (success) {
-        // Navigation handled by AuthProvider based on user role
-        // Waiter -> (tabs)/tables
-        // Cook -> (tabs)/kitchen
+        // Navigate to root – index.tsx will redirect based on role
+        router.replace('/');
       }
     } catch (error: any) {
       Alert.alert('Login Failed', error.message || 'Invalid phone number or PIN');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fillDemoCredentials = (role: 'waiter' | 'cook') => {
-    if (role === 'waiter') {
-      setPhone('9876543210');
-      setPin('1234');
-    } else {
-      setPhone('9876543211');
-      setPin('5678');
     }
   };
 
@@ -94,7 +84,7 @@ export default function PhoneLogin() {
           <View style={styles.brandIcon}>
             <Utensils size={32} color={colors.surface} />
           </View>
-          <Text style={styles.brandTitle}>Saffron & Sage</Text>
+          <Text style={styles.brandTitle}>{RESTAURANT.name}</Text>
           <Text style={styles.brandSubtitle}>Staff Login</Text>
         </View>
 
@@ -109,11 +99,11 @@ export default function PhoneLogin() {
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Phone Number</Text>
             <View style={styles.inputWrapper}>
-              <Phone size={20} color={colors.textMuted} style={styles.inputIcon} />
+              <Phone size={20} color={colors.muted} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Enter 10-digit phone number"
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={colors.muted}
                 value={phone}
                 onChangeText={(text) => setPhone(text.replace(/[^0-9]/g, '').slice(0, 10))}
                 keyboardType="phone-pad"
@@ -127,11 +117,11 @@ export default function PhoneLogin() {
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>PIN</Text>
             <View style={styles.inputWrapper}>
-              <Lock size={20} color={colors.textMuted} style={styles.inputIcon} />
+              <Lock size={20} color={colors.muted} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Enter your PIN"
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={colors.muted}
                 value={pin}
                 onChangeText={(text) => setPin(text.replace(/[^0-9]/g, '').slice(0, 6))}
                 keyboardType="number-pad"
@@ -154,34 +144,11 @@ export default function PhoneLogin() {
               <Text style={styles.loginButtonText}>Sign In</Text>
             )}
           </Pressable>
-
-          {/* Demo Credentials Helper */}
-          <View style={styles.demoSection}>
-            <Text style={styles.demoTitle}>Demo Credentials (For Testing)</Text>
-            <View style={styles.demoButtons}>
-              <Pressable
-                style={styles.demoButton}
-                onPress={() => fillDemoCredentials('waiter')}
-                disabled={loading}
-              >
-                <Text style={styles.demoButtonText}>Waiter Demo</Text>
-                <Text style={styles.demoButtonSubtext}>9876543210 / 1234</Text>
-              </Pressable>
-              <Pressable
-                style={styles.demoButton}
-                onPress={() => fillDemoCredentials('cook')}
-                disabled={loading}
-              >
-                <Text style={styles.demoButtonText}>Cook Demo</Text>
-                <Text style={styles.demoButtonSubtext}>9876543211 / 5678</Text>
-              </Pressable>
-            </View>
-          </View>
         </View>
 
         {/* Footer */}
         <Text style={styles.footer}>
-          © 2026 Saffron & Sage. All rights reserved.
+          {RESTAURANT.footerText}
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -221,7 +188,7 @@ const styles = StyleSheet.create({
   },
   brandSubtitle: {
     fontSize: 16,
-    color: colors.textMuted,
+    color: colors.muted,
   },
   formContainer: {
     backgroundColor: colors.surface,
@@ -247,7 +214,7 @@ const styles = StyleSheet.create({
   },
   formSubtitle: {
     fontSize: 14,
-    color: colors.textMuted,
+    color: colors.muted,
     marginBottom: 24,
   },
   inputGroup: {
@@ -293,45 +260,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  demoSection: {
-    marginTop: 24,
-    paddingTop: 24,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  demoTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  demoButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  demoButton: {
-    flex: 1,
-    backgroundColor: colors.background,
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  demoButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  demoButtonSubtext: {
-    fontSize: 11,
-    color: colors.textMuted,
-  },
   footer: {
     textAlign: 'center',
     fontSize: 12,
-    color: colors.textMuted,
+    color: colors.muted,
     marginTop: 32,
   },
 });

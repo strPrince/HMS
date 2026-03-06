@@ -97,6 +97,14 @@ export default function Orders() {
                 <Text style={styles.totalText}>{formatCurrency(total)}</Text>
               </View>
 
+              {order.status === 'completed' && order.paymentMethod && (
+                <View style={styles.paymentBadge}>
+                  <Text style={styles.paymentBadgeText}>
+                    {order.paymentMethod === 'cash' ? '💵 Cash' : order.paymentMethod === 'card' ? '💳 Card' : '📱 UPI'}
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.itemsList}>
                 {summaryLines.map((line, index) => (
                   <View key={`${order.id}-${index}`} style={styles.itemRow}>
@@ -110,20 +118,22 @@ export default function Orders() {
                 {order.notes ? <Text style={styles.noteText}>{order.notes}</Text> : null}
               </View>
 
-              {(newCount > 0 || readyCount > 0) && tab === 'active' ? (
-                <View style={styles.statusRow}>
-                  {newCount > 0 && (
-                    <View style={[styles.statusPill, styles.statusNew]}>
-                      <Text style={styles.statusText}>{newCount} new</Text>
-                    </View>
-                  )}
-                  {readyCount > 0 && (
-                    <View style={[styles.statusPill, styles.statusReady]}>
-                      <Text style={styles.statusText}>{readyCount} ready</Text>
-                    </View>
-                  )}
-                </View>
-              ) : null}
+              {
+                (newCount > 0 || readyCount > 0) && tab === 'active' ? (
+                  <View style={styles.statusRow}>
+                    {newCount > 0 && (
+                      <View style={[styles.statusPill, styles.statusNew]}>
+                        <Text style={styles.statusText}>{newCount} new</Text>
+                      </View>
+                    )}
+                    {readyCount > 0 && (
+                      <View style={[styles.statusPill, styles.statusReady]}>
+                        <Text style={styles.statusText}>{readyCount} ready</Text>
+                      </View>
+                    )}
+                  </View>
+                ) : null
+              }
             </Pressable>
           );
         })}
@@ -134,7 +144,7 @@ export default function Orders() {
           </View>
         ) : null}
       </ScrollView>
-    </View>
+    </View >
   );
 }
 
@@ -299,5 +309,18 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 13,
     color: colors.mutedDark
-  }
+  },
+  paymentBadge: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#E8FAE3',
+  },
+  paymentBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#15803D',
+  },
 });
