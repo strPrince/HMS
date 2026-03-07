@@ -89,7 +89,8 @@ export default function OrderSummary() {
       showToast.success('Order sent to kitchen successfully!');
       router.push('/(tabs)/tables');
     } else {
-      showToast.error('Failed to submit order');
+      setShowConfirm(false);
+      showToast.error('Failed to submit order. Please try again.');
     }
     setSubmitting(false);
   };

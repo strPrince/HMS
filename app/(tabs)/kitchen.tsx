@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
@@ -11,7 +11,6 @@ import {
   Wifi,
 } from 'lucide-react-native';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
-import OrderService from '../../src/services/order.service';
 
 type QueueFilter = 'all' | 'dine-in' | 'parcel';
 type KitchenStatus = 'open' | 'preparing' | 'ready';
@@ -48,9 +47,20 @@ const formatElapsed = (createdAt: string, now: number) => {
 export default function Kitchen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { orders, tables, getOrderItems, updateOrder, refreshOrdersFromApi } = useRestaurantStore();
+  const {
+    orders,
+    tables,
+    getOrderItems,
+    updateOrder,
+    markOrderAsReady,
+    refreshOrdersFromApi,
+    refreshTablesFromApi,
+    refreshMenuFromApi,
+  } = useRestaurantStore();
   const [filter, setFilter] = useState<QueueFilter>('all');
   const [now, setNow] = useState(Date.now());
+  const [refreshing, setRefreshing] = useState(false);
+  const [markingId, setMarkingId] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 10000);
@@ -114,21 +124,30 @@ export default function Kitchen() {
   };
 
   const handleMarkReady = async (orderId: string) => {
-    const order = orders.find((entry) => entry.id === orderId);
-    if (!order) return;
-
+    if (markingId) return; // prevent double-tap
+    setMarkingId(orderId);
     try {
-      await OrderService.updateOrder(orderId.replace(/^o/, ''), { status: 'ready' });
-      await refreshOrdersFromApi();
+      await markOrderAsReady(orderId);
     } catch (error) {
-      // Fallback local update if network fails
-      updateOrder(orderId, {
-        status: 'ready',
-        items: order.items.map((item) => ({ ...item, status: 'ready' })),
-      });
+      console.warn('[Kitchen] handleMarkReady API failed:', error);
+      // Optimistic update already applied by markOrderAsReady
+    } finally {
+      setMarkingId(null);
     }
-
     router.push(`/kitchen/ready/${orderId}`);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refreshOrdersFromApi(),
+        refreshTablesFromApi(),
+        refreshMenuFromApi(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   return (
@@ -173,7 +192,13 @@ export default function Kitchen() {
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PRIMARY_GREEN} />
+        }
+      >
         {filteredOrders.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Package size={40} color="#94A3B8" />
@@ -268,9 +293,15 @@ export default function Kitchen() {
                   </View>
                 </Pressable>
 
-                <Pressable style={styles.readyButton} onPress={() => handleMarkReady(summary.id)}>
+                <Pressable
+                  style={[styles.readyButton, markingId === summary.id && { opacity: 0.6 }]}
+                  onPress={() => handleMarkReady(summary.id)}
+                  disabled={!!markingId}
+                >
                   <CheckCircle2 size={20} color="#052E16" />
-                  <Text style={styles.readyButtonText}>Mark Order Ready</Text>
+                  <Text style={styles.readyButtonText}>
+                    {markingId === summary.id ? 'Updating...' : 'Mark Order Ready'}
+                  </Text>
                 </Pressable>
               </View>
             );

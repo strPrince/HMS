@@ -20,7 +20,7 @@ const getOrderType = (tableId: string, notes?: string) => {
 export default function KitchenReadyConfirmation() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const router = useRouter();
-  const { orders, updateOrder } = useRestaurantStore();
+  const { orders, updateOrder, markOrderAsReady } = useRestaurantStore();
   const [seconds, setSeconds] = useState(5);
 
   const order = orders.find((entry) => entry.id === orderId);
@@ -49,8 +49,16 @@ export default function KitchenReadyConfirmation() {
     );
   }
 
-  const undoReady = () => {
+  const undoReady = async () => {
+    // Revert local state immediately
     updateOrder(order.id, { status: 'in-kitchen' });
+    // Fire API revert in background (don't block navigation)
+    import('../../../src/services/order.service').then(({ default: OrderService }) => {
+      const numericId = String(parseInt(order.id.replace(/[^0-9]/g, ''), 10));
+      OrderService.updateOrderPut(numericId, { status: 'in-kitchen' }).catch((err) =>
+        console.warn('[Kitchen] undoReady API failed:', err)
+      );
+    });
     router.replace(`/(tabs)/kitchen`);
   };
 

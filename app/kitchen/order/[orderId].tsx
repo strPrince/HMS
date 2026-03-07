@@ -45,8 +45,9 @@ export default function KitchenOrderPrep() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { orders, tables, getOrderItems, updateOrder } = useRestaurantStore();
+  const { orders, tables, getOrderItems, updateOrder, markOrderAsReady } = useRestaurantStore();
   const [now, setNow] = useState(Date.now());
+  const [marking, setMarking] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 10000);
@@ -88,12 +89,19 @@ export default function KitchenOrderPrep() {
 
   const allReady = order.items.every((line) => line.status === 'ready');
 
-  const markAllReady = () => {
-    updateOrder(order.id, {
-      status: 'ready',
-      items: order.items.map((line) => ({ ...line, status: 'ready' })),
-    });
-    router.push(`/kitchen/ready/${order.id}`);
+  const markAllReady = async () => {
+    if (marking) return;
+    setMarking(true);
+    try {
+      await markOrderAsReady(order.id);
+      router.push(`/kitchen/ready/${order.id}`);
+    } catch (error) {
+      console.warn('[Kitchen] markAllReady API failed:', error);
+      // Optimistic update already applied by store — navigate anyway
+      router.push(`/kitchen/ready/${order.id}`);
+    } finally {
+      setMarking(false);
+    }
   };
 
   return (
@@ -203,9 +211,13 @@ export default function KitchenOrderPrep() {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 18) }]}>
-        <Pressable style={styles.markAllButton} onPress={markAllReady}>
+        <Pressable
+          style={[styles.markAllButton, marking && { opacity: 0.6 }]}
+          onPress={markAllReady}
+          disabled={marking}
+        >
           <CheckCircle2 size={24} color="#052E16" />
-          <Text style={styles.markAllText}>{allReady ? 'Order Ready' : 'Mark All Ready'}</Text>
+          <Text style={styles.markAllText}>{marking ? 'Updating...' : allReady ? 'Order Ready' : 'Mark All Ready'}</Text>
         </Pressable>
       </View>
     </View>

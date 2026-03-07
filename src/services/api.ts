@@ -54,9 +54,14 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid - clear storage and notify AuthProvider
-      await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
-      authEvents.emit('logout');
+      // Don't re-emit logout if the call that failed was the logout endpoint itself
+      const requestUrl = error.config?.url || '';
+      const isLogoutCall = requestUrl.includes('/auth/staff/logout');
+      if (!isLogoutCall) {
+        // Token expired or invalid - clear storage and notify AuthProvider
+        await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
+        authEvents.emit('logout');
+      }
     }
     return Promise.reject(error);
   }

@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, memo } from 'react';
-import { Pressable, FlatList, StyleSheet, Text, View } from 'react-native';
+import { Pressable, FlatList, StyleSheet, Text, View, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Bell, Users, Utensils, Receipt } from 'lucide-react-native';
@@ -75,10 +75,13 @@ export default function Tables() {
   const selectTable = useRestaurantStore(state => state.selectTable);
   const getTableActiveOrder = useRestaurantStore(state => state.getTableActiveOrder);
   const clearCart = useRestaurantStore(state => state.clearCart);
+  const refreshOrdersFromApi = useRestaurantStore(state => state.refreshOrdersFromApi);
+  const refreshTablesFromApi = useRestaurantStore(state => state.refreshTablesFromApi);
   const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [refreshing, setRefreshing] = useState(false);
 
 
   const filteredTables = useMemo(() => {
@@ -117,6 +120,15 @@ export default function Tables() {
   }, [getTableActiveOrder, handleTablePress]);
 
   const keyExtractor = useCallback((item: any) => item.id, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refreshTablesFromApi(), refreshOrdersFromApi()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshOrdersFromApi, refreshTablesFromApi]);
 
   return (
     <View style={styles.container}>
@@ -199,6 +211,9 @@ export default function Tables() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         columnWrapperStyle={styles.row}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF6B35" />
+        }
       />
     </View>
   );

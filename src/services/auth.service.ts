@@ -115,10 +115,33 @@ class AuthService {
    * Logout - Clear local storage and notify backend
    */
   async logout(): Promise<void> {
+    let lastError: any = null;
     try {
-      await apiClient.post(API_ENDPOINTS.AUTH.LOGOUT);
-    } catch (error) {
-      console.error('Logout API call failed:', error);
+      const endpoints = Array.from(
+        new Set([API_ENDPOINTS.AUTH.LOGOUT, '/auth/staff/logout', '/auth/logout'])
+      );
+
+      for (const endpoint of endpoints) {
+        try {
+          await apiClient.post(endpoint);
+          lastError = null;
+          break;
+        } catch (error: any) {
+          lastError = error;
+          const status = error?.response?.status;
+          // Route may differ across backend versions; try next known endpoint on 404.
+          if (status === 404) continue;
+          // For other failures, stop retrying and proceed to local cleanup.
+          break;
+        }
+      }
+
+      if (lastError) {
+        const status = lastError?.response?.status;
+        if (status && status !== 404) {
+          console.warn(`Logout API call failed (${status}). Clearing local session.`);
+        }
+      }
     } finally {
       // Always clear local storage
       await storage.clearAll();

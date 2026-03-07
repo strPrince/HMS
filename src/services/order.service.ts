@@ -24,6 +24,48 @@ class OrderService {
     return response?.data?.data ?? response?.data;
   }
 
+  private buildPayloadVariants(payload: { status?: string; customerName?: string; customerPhone?: string }) {
+    if (!payload?.status) return [payload];
+
+    const { status, ...rest } = payload;
+    const variants = [
+      { ...rest, status },
+      { ...rest, orderStatus: status },
+      { ...rest, order_status: status },
+    ];
+
+    // Deduplicate payloads (some backends may use same key conventions).
+    return variants.filter(
+      (item, index, arr) =>
+        index === arr.findIndex((x) => JSON.stringify(x) === JSON.stringify(item))
+    );
+  }
+
+  private async tryUpdateOrder(
+    orderId: string,
+    payload: { status?: string; customerName?: string; customerPhone?: string },
+    methods: Array<'put' | 'patch'>
+  ) {
+    const payloadVariants = this.buildPayloadVariants(payload);
+    let lastError: any = null;
+
+    for (const method of methods) {
+      for (const body of payloadVariants) {
+        try {
+          const response =
+            method === 'put'
+              ? await apiClient.put(API_ENDPOINTS.ORDERS.UPDATE(orderId), body)
+              : await apiClient.patch(API_ENDPOINTS.ORDERS.UPDATE(orderId), body);
+          return this.extractData(response);
+        } catch (error: any) {
+          lastError = error;
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
   /**
    * Get all orders with optional filters
    */
@@ -83,12 +125,24 @@ class OrderService {
   }
 
   /**
+   * Update order using explicit PUT endpoint
+   * Required by kitchen flow status updates
+   */
+  async updateOrderPut(orderId: string, payload: { status?: string; customerName?: string; customerPhone?: string }) {
+    try {
+      return await this.tryUpdateOrder(orderId, payload, ['put', 'patch']);
+    } catch (error) {
+      console.error('Failed to update order with PUT:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Update order (status/customer details)
    */
   async updateOrder(orderId: string, payload: { status?: string; customerName?: string; customerPhone?: string }) {
     try {
-      const response = await apiClient.put(API_ENDPOINTS.ORDERS.UPDATE(orderId), payload);
-      return this.extractData(response);
+      return await this.tryUpdateOrder(orderId, payload, ['put', 'patch']);
     } catch (error) {
       console.error('Failed to update order:', error);
       throw error;

@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { MenuItem, Order, Table, OrderItem, OrderType, PaymentMethod } from '../types/restaurant';
-import { menuItems as initialMenuItems, tables as initialTables, orders as initialOrders } from '../mocks/restaurant-data';
 import { getCurrentTimestamp } from '../src/utils/formatDate';
 import MenuService from '../src/services/menu.service';
 import TableService from '../src/services/table.service';
@@ -65,6 +64,8 @@ interface RestaurantStore {
   // Backend sync
   loadInitialData: () => Promise<void>;
   refreshOrdersFromApi: () => Promise<void>;
+  refreshTablesFromApi: () => Promise<void>;
+  refreshMenuFromApi: () => Promise<void>;
 }
 
 const toNumber = (id: string | number) => {
@@ -74,55 +75,80 @@ const toNumber = (id: string | number) => {
 };
 
 const mapTableStatus = (status: string): Table['status'] => {
-  if (status === 'available' || status === 'occupied' || status === 'billing') return status;
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'available' || normalized === 'free') return 'available';
+  if (normalized === 'occupied' || normalized === 'busy') return 'occupied';
+  if (normalized === 'billing') return 'billing';
   return 'occupied';
 };
 
 const mapOrderStatus = (status: string): Order['status'] => {
-  if (status === 'ready') return 'ready';
-  if (status === 'billing') return 'billing';
-  if (status === 'served') return 'served';
-  if (status === 'completed') return 'completed';
-  if (status === 'cancelled') return 'cancelled';
-  if (status === 'pending') return 'pending';
+  const normalized = String(status || '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (normalized === 'in_kitchen' || normalized === 'in-kitchen' || normalized === 'inkitchen') return 'in-kitchen';
+  if (normalized === 'new') return 'pending';
+  if (normalized === 'ready') return 'ready';
+  if (normalized === 'billing') return 'billing';
+  if (normalized === 'served') return 'served';
+  if (normalized === 'completed') return 'completed';
+  if (normalized === 'cancelled') return 'cancelled';
+  if (normalized === 'pending') return 'pending';
   return 'in-kitchen';
 };
 
 const mapOrderItemStatus = (status?: string): OrderItem['status'] => {
-  if (status === 'ready') return 'ready';
-  if (status === 'preparing') return 'preparing';
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'pending' || normalized === 'new') return 'new';
+  if (normalized === 'ready') return 'ready';
+  if (normalized === 'preparing') return 'preparing';
   return 'new';
 };
 
+const getApiId = (input: any): string | number | undefined => {
+  return input?.id ?? input?._id ?? input?.menuItemId ?? input?.menu_item_id ?? input?.tableId ?? input?.table_id;
+};
+
+const normalizeArray = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  if (Array.isArray(value.data)) return value.data;
+  if (Array.isArray(value.items)) return value.items;
+  if (Array.isArray(value.results)) return value.results;
+  if (Array.isArray(value.list)) return value.list;
+  if (Array.isArray(value.orders)) return value.orders;
+  if (Array.isArray(value.tables)) return value.tables;
+  if (Array.isArray(value.menuItems)) return value.menuItems;
+  return [];
+};
+
 const mapMenuItemFromApi = (item: any): MenuItem => ({
-  id: `m${item.id}`,
-  name: item.name,
+  id: `m${String(getApiId(item) ?? '')}`,
+  name: item.name || item.title || 'Unnamed Item',
   description: item.description || '',
   price: Number(item.price || 0),
-  category: item.category?.name,
+  category: item.category?.name || item.categoryName || item.category,
   isPopular: false,
 });
 
 const mapTableFromApi = (table: any): Table => ({
-  id: `t${table.id}`,
-  label: table.tableNumber,
+  id: `t${String(getApiId(table) ?? '')}`,
+  label: String(table.tableNumber || table.label || table.number || table.name || ''),
   seats: table.capacity || 4,
-  status: mapTableStatus(table.status),
-  currentOrderId: table.currentOrderId ? `o${table.currentOrderId}` : undefined,
+  status: mapTableStatus(String(table.status || 'occupied')),
+  currentOrderId: table.currentOrderId || table.current_order_id ? `o${table.currentOrderId || table.current_order_id}` : undefined,
 });
 
 const mapOrderFromApi = (order: any): Order => ({
-  id: `o${order.id}`,
-  tableId: order.tableId ? `t${order.tableId}` : 't0',
-  status: mapOrderStatus(order.status),
-  createdAt: order.createdAt,
-  updatedAt: order.updatedAt,
-  notes: order.specialNotes || '',
+  id: `o${String(getApiId(order) ?? '')}`,
+  tableId: order.tableId || order.table_id || order.table?.id ? `t${order.tableId || order.table_id || order.table?.id}` : 't0',
+  status: mapOrderStatus(String(order.status || 'in-kitchen')),
+  createdAt: order.createdAt || order.created_at || new Date().toISOString(),
+  updatedAt: order.updatedAt || order.updated_at,
+  notes: order.specialNotes || order.special_notes || order.notes || '',
   waiterName: order.waiter?.name,
-  orderType: order.orderType === 'parcel' ? 'parcel' : 'dine-in',
+  orderType: (order.orderType || order.order_type) === 'parcel' ? 'parcel' : 'dine-in',
   paymentMethod: order.paymentMethod || undefined,
-  items: (order.orderItems || order.items || []).map((line: any) => ({
-    itemId: `m${line.menuItemId || line.menuItem?.id}`,
+  items: (order.orderItems || order.order_items || order.items || []).map((line: any) => ({
+    itemId: `m${String(getApiId(line?.menuItem ? line.menuItem : line) || line?.menuItem?.id || line?.item?.id || '')}`,
     quantity: line.quantity,
     status: mapOrderItemStatus(line.status),
     specialInstructions: line.specialInstructions || '',
@@ -132,9 +158,9 @@ const mapOrderFromApi = (order: any): Order => ({
 export const useRestaurantStore = create<RestaurantStore>()(
   persist(
     (set, get) => ({
-      menuItems: initialMenuItems,
-      tables: initialTables,
-      orders: initialOrders,
+      menuItems: [],
+      tables: [],
+      orders: [],
       selectedTable: null,
       selectedOrder: null,
       cart: [],
@@ -234,45 +260,52 @@ export const useRestaurantStore = create<RestaurantStore>()(
             OrderService.getOrders(),
           ]);
 
-          // Only replace state with API data if the response is non-empty.
-          // An empty array from the API means the backend has no records yet,
-          // so we keep the mock fallback data to avoid a blank UI.
-          const apiMenuItems = Array.isArray(menuRaw) && menuRaw.length > 0
-            ? menuRaw.map(mapMenuItemFromApi)
-            : null;
-          const apiTables = Array.isArray(tablesRaw) && tablesRaw.length > 0
-            ? tablesRaw.map(mapTableFromApi)
-            : null;
-          const apiOrders = Array.isArray(ordersRaw) && ordersRaw.length > 0
-            ? ordersRaw.map(mapOrderFromApi)
-            : null;
+          const apiMenuItems = normalizeArray(menuRaw).map(mapMenuItemFromApi).filter((item) => item.id !== 'm');
+          const apiTables = normalizeArray(tablesRaw).map(mapTableFromApi).filter((table) => table.id !== 't');
+          const apiOrders = normalizeArray(ordersRaw).map(mapOrderFromApi).filter((order) => order.id !== 'o');
 
-          set((state) => ({
-            menuItems: apiMenuItems ?? state.menuItems,
-            tables: apiTables ?? state.tables,
-            orders: apiOrders ?? state.orders,
-          }));
+          set({
+            menuItems: apiMenuItems,
+            tables: apiTables,
+            orders: apiOrders,
+          });
         } catch (error) {
-          console.warn('Backend unavailable, using local mock data:', (error as any)?.message);
-          // Only set mock data if state is already empty (first load)
-          const { tables, menuItems, orders } = get();
-          if (tables.length === 0) set({ menuItems: initialMenuItems, tables: initialTables, orders: initialOrders });
+          console.warn('Failed to load initial restaurant data:', (error as any)?.message);
         }
       },
 
       refreshOrdersFromApi: async () => {
         try {
           const ordersRaw = await OrderService.getOrders();
-          if (Array.isArray(ordersRaw)) {
-            set({ orders: ordersRaw.map(mapOrderFromApi) });
-          }
+          const orders = normalizeArray(ordersRaw).map(mapOrderFromApi).filter((order) => order.id !== 'o');
+          set({ orders });
         } catch (error) {
           console.error('Failed to refresh orders from API:', error);
         }
       },
 
-      submitOrderToKitchen: async (tableId, waiterName) => {
-        const { cart, orderType, menuItems } = get();
+      refreshTablesFromApi: async () => {
+        try {
+          const tablesRaw = await TableService.getTables();
+          const tables = normalizeArray(tablesRaw).map(mapTableFromApi).filter((table) => table.id !== 't');
+          set({ tables });
+        } catch (error) {
+          console.error('Failed to refresh tables from API:', error);
+        }
+      },
+
+      refreshMenuFromApi: async () => {
+        try {
+          const menuRaw = await MenuService.getMenuItems();
+          const menuItems = normalizeArray(menuRaw).map(mapMenuItemFromApi).filter((item) => item.id !== 'm');
+          set({ menuItems });
+        } catch (error) {
+          console.error('Failed to refresh menu from API:', error);
+        }
+      },
+
+      submitOrderToKitchen: async (tableId, _waiterName) => {
+        const { cart, orderType } = get();
         if (cart.length === 0) return null;
 
         let created: any = null;
@@ -287,31 +320,12 @@ export const useRestaurantStore = create<RestaurantStore>()(
             })),
           });
         } catch (error) {
-          console.warn('API unavailable, creating order locally:', (error as any)?.message);
+          console.warn('Failed to create order via API:', (error as any)?.message);
+          return null;
         }
 
-        // Build the order — from API response if available, or locally
-        let mappedOrder;
-        if (created) {
-          mappedOrder = mapOrderFromApi(created);
-        } else {
-          // Local fallback: build order from cart data
-          const localId = `o${Date.now()}`;
-          mappedOrder = {
-            id: localId,
-            tableId,
-            status: 'in-kitchen' as const,
-            createdAt: new Date().toISOString(),
-            waiterName,
-            orderType: orderType,
-            items: cart.map((item) => ({
-              itemId: item.itemId,
-              quantity: item.quantity,
-              status: 'new' as const,
-              specialInstructions: item.specialInstructions || '',
-            })),
-          };
-        }
+        if (!created) return null;
+        const mappedOrder = mapOrderFromApi(created);
 
         set((state) => ({
           orders: [mappedOrder, ...state.orders.filter((o) => o.id !== mappedOrder.id)],
@@ -338,7 +352,9 @@ export const useRestaurantStore = create<RestaurantStore>()(
         // Sync to backend
         try {
           const numericId = String(toNumber(orderId));
-          await OrderService.updateOrder(numericId, { status: 'ready' });
+          await OrderService.updateOrderPut(numericId, { status: 'ready' });
+          await get().refreshOrdersFromApi();
+          await get().refreshTablesFromApi();
         } catch (error) {
           console.warn('Failed to sync markOrderAsReady to backend:', (error as any)?.message);
         }
@@ -361,7 +377,9 @@ export const useRestaurantStore = create<RestaurantStore>()(
         // Sync to backend
         try {
           const numericId = String(toNumber(orderId));
-          await OrderService.updateOrder(numericId, { status: 'served' });
+          await OrderService.updateOrder(numericId, { status: 'billing' });
+          await get().refreshOrdersFromApi();
+          await get().refreshTablesFromApi();
         } catch (error) {
           console.warn('Failed to sync moveOrderToBilling to backend:', (error as any)?.message);
         }
@@ -442,3 +460,5 @@ export const useRestaurantStore = create<RestaurantStore>()(
     }
   )
 );
+
+

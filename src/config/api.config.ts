@@ -37,6 +37,11 @@ const getDevApiBaseUrl = () => {
     return `http://${lanHost}:5000/api/v1`;
   }
 
+  // Android emulator localhost bridge
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:5000/api/v1';
+  }
+
   return 'http://localhost:5000/api/v1';
 };
 
@@ -50,6 +55,10 @@ const getDevSocketUrl = () => {
   const lanHost = getLanHostFromExpo();
   if (lanHost) {
     return `http://${lanHost}:5000`;
+  }
+
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:5000';
   }
 
   return 'http://localhost:5000';
@@ -73,7 +82,7 @@ export const API_ENDPOINTS = {
   AUTH: {
     LOGIN: '/auth/staff/login',
     REGISTER_PUSH_TOKEN: '/auth/staff/register-push-token',
-    LOGOUT: '/auth/logout',
+    LOGOUT: '/auth/staff/logout',
   },
 
   // Menu

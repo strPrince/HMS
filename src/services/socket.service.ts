@@ -32,7 +32,7 @@ class SocketService {
         transports: ['polling', 'websocket'],
         reconnection: true,
         reconnectionDelay: 2000,
-        reconnectionAttempts: 3,
+        reconnectionAttempts: Infinity,
         timeout: 10000,
       });
 

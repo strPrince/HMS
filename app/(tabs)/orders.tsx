@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { colors } from '../../constants/colors';
@@ -12,10 +12,14 @@ type TabKey = 'active' | 'closed';
 
 export default function Orders() {
   const { orders, tables, menuItems, getOrderTotal } = useRestaurantStore();
+  const refreshOrdersFromApi = useRestaurantStore((state) => state.refreshOrdersFromApi);
+  const refreshTablesFromApi = useRestaurantStore((state) => state.refreshTablesFromApi);
+  const refreshMenuFromApi = useRestaurantStore((state) => state.refreshMenuFromApi);
   const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<TabKey>('active');
+  const [refreshing, setRefreshing] = useState(false);
 
   const activeCount = useMemo(
     () => orders.filter((order) => order.status !== 'completed').length,
@@ -37,9 +41,28 @@ export default function Orders() {
     return table?.label || tableId.replace('t', '');
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refreshOrdersFromApi(),
+        refreshTablesFromApi(),
+        refreshMenuFromApi(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+      >
         <Text style={styles.title}>Orders</Text>
 
         <View style={styles.tabs}>

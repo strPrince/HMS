@@ -43,9 +43,12 @@ class TableService {
    */
   async updateTableStatus(tableId: string, status: 'available' | 'occupied' | 'billing') {
     try {
-      const response = await apiClient.patch(API_ENDPOINTS.TABLES.UPDATE_STATUS(tableId), {
-        status,
-      });
+      let response;
+      try {
+        response = await apiClient.patch(API_ENDPOINTS.TABLES.UPDATE_STATUS(tableId), { status });
+      } catch {
+        response = await apiClient.put(API_ENDPOINTS.TABLES.UPDATE_STATUS(tableId), { status });
+      }
       return this.extractData(response);
     } catch (error) {
       console.error('Failed to update table status:', error);

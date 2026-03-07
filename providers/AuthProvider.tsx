@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { router } from 'expo-router';
 import AuthService, { LoginResponse } from '../src/services/auth.service';
 import SocketService from '../src/services/socket.service';
 import NotificationService from '../src/services/notification.service';
@@ -42,6 +43,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // on the client we start true and flip to false once checkAuth finishes.
   const [isLoading, setIsLoading] = useState(!isSSR);
   const loadInitialData = useRestaurantStore((state) => state.loadInitialData);
+  const refreshOrdersFromApi = useRestaurantStore((state) => state.refreshOrdersFromApi);
+  const refreshTablesFromApi = useRestaurantStore((state) => state.refreshTablesFromApi);
+  const refreshMenuFromApi = useRestaurantStore((state) => state.refreshMenuFromApi);
   const didCheck = useRef(false);
 
   // ── Check if user is authenticated on mount ───────────────────────
@@ -89,10 +93,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const handler = () => {
       setUser(null);
       SocketService.disconnect();
+      router.replace('/phone-login');
     };
     authEvents.on('logout', handler);
     return () => { authEvents.off('logout', handler); };
   }, []);
+
+  // Live sync for socket events + fallback polling
+  useEffect(() => {
+    if (!user) return;
+
+    const syncOrdersAndTables = () => {
+      refreshOrdersFromApi().catch(console.warn);
+      refreshTablesFromApi().catch(console.warn);
+    };
+
+    const syncMenu = () => {
+      refreshMenuFromApi().catch(console.warn);
+    };
+
+    SocketService.onOrderCreated(syncOrdersAndTables);
+    SocketService.onOrderReady(syncOrdersAndTables);
+    SocketService.onOrderCompleted(syncOrdersAndTables);
+    SocketService.onOrderUpdated(syncOrdersAndTables);
+    SocketService.onTableUpdated(syncOrdersAndTables);
+
+    syncOrdersAndTables();
+    syncMenu();
+
+    const orderTablePoller = setInterval(syncOrdersAndTables, 10000);
+    const menuPoller = setInterval(syncMenu, 60000);
+
+    return () => {
+      clearInterval(orderTablePoller);
+      clearInterval(menuPoller);
+      SocketService.off('order:created', syncOrdersAndTables);
+      SocketService.off('order:ready', syncOrdersAndTables);
+      SocketService.off('order:completed', syncOrdersAndTables);
+      SocketService.off('order:updated', syncOrdersAndTables);
+      SocketService.off('table:updated', syncOrdersAndTables);
+    };
+  }, [user, refreshOrdersFromApi, refreshTablesFromApi, refreshMenuFromApi]);
 
   // ── signIn ────────────────────────────────────────────────────────
   const signIn = useCallback(async (phone: string, pin: string): Promise<boolean> => {
@@ -118,15 +159,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadInitialData]);
 
-  // ── signOut (no useRouter – navigation handled by index.tsx) ──────
+  // ── signOut ───────────────────────────────────────────────────────
   const signOut = useCallback(async () => {
     try {
       await AuthService.logout();
+    } catch (error) {
+      // API call failed (network error, 401, 404, etc.) — local cleanup still runs
+      console.warn('[AuthProvider] Logout API call failed (local session cleared):', error);
+    } finally {
+      // Always clear local session regardless of API result
       SocketService.disconnect();
       setUser(null);
-      // index.tsx <Redirect> will send user to /phone-login
-    } catch (error) {
-      console.error('Sign out failed:', error);
+      router.replace('/phone-login');
     }
   }, []);
 
