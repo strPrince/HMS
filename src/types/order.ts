@@ -13,6 +13,7 @@ export type OrderItem = {
   specialInstructions?: string;
   spiceLevel?: 'mild' | 'medium' | 'hot';
   dietPreference?: 'veg' | 'non-veg' | 'vegan';
+  customizations?: Record<string, unknown>;
 };
 
 export type Order = {

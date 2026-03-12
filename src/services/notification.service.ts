@@ -4,47 +4,157 @@
  * NOTE: Notifications don't work in Expo Go (SDK 53+), requires development build
  */
 
-import { Platform } from 'react-native';
+import { Platform, Vibration } from 'react-native';
 import Constants from 'expo-constants';
 import AuthService from './auth.service';
 
 // Check if running in Expo Go
 const isExpoGo = Constants.appOwnership === 'expo';
 
-// Lazy load notifications only when not in Expo Go
+const canUseNativeNotifications = Platform.OS !== 'web';
+const canUseExpoNotifications = canUseNativeNotifications && !isExpoGo;
+
+// Lazy load notifications module
 let Notifications: any = null;
 let Device: any = null;
+let Haptics: any = null;
 
-// Only import if not in Expo Go
-if (!isExpoGo) {
+if (canUseExpoNotifications) {
   try {
     Notifications = require('expo-notifications');
-    Device = require('expo-device');
-    
-    // Configure how notifications are handled when app is in foreground
-    if (Notifications) {
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldPlaySound: true,
-          shouldSetBadge: false,
-        }),
-      });
-    }
   } catch (error) {
-    console.log('Notifications not available in Expo Go');
+    console.log('Local notifications module not available:', error);
+  }
+
+  try {
+    Device = require('expo-device');
+  } catch (error) {
+    console.log('Device module not available:', error);
+  }
+  // Configure how notifications are handled when app is in foreground
+  if (Notifications) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+  }
+}
+
+if (canUseNativeNotifications) {
+  try {
+    Haptics = require('expo-haptics');
+  } catch (error) {
+    console.log('Haptics module not available:', error);
   }
 }
 
 class NotificationService {
   private expoPushToken: string | null = null;
+  private hasCheckedLocalPermission = false;
+  private hasLocalPermission = false;
+  private hasConfiguredAndroidChannel = false;
+
+  private async ensureAndroidChannel() {
+    if (Platform.OS !== 'android' || !Notifications || this.hasConfiguredAndroidChannel) return;
+    try {
+      await Notifications.setNotificationChannelAsync('orders', {
+        name: 'Orders',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        vibrationPattern: [0, 250, 250, 250],
+      });
+      this.hasConfiguredAndroidChannel = true;
+    } catch (error) {
+      console.warn('Failed to configure Android notification channel:', error);
+    }
+  }
+
+  private async ensureLocalPermission() {
+    if (!Notifications) return false;
+    if (this.hasCheckedLocalPermission) return this.hasLocalPermission;
+
+    this.hasCheckedLocalPermission = true;
+
+    try {
+      const existing = await Notifications.getPermissionsAsync();
+      let finalStatus = existing.status;
+      if (finalStatus !== 'granted') {
+        const requested = await Notifications.requestPermissionsAsync();
+        finalStatus = requested.status;
+      }
+      this.hasLocalPermission = finalStatus === 'granted';
+      return this.hasLocalPermission;
+    } catch (error) {
+      console.warn('Failed to check notification permissions:', error);
+      this.hasLocalPermission = false;
+      return false;
+    }
+  }
+
+  private async triggerHapticsFallback() {
+    if (!Haptics) return;
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      // no-op
+    }
+  }
+
+  private triggerVibrationFallback() {
+    if (Platform.OS === 'web') return;
+    try {
+      Vibration.vibrate(120);
+    } catch {
+      // no-op
+    }
+  }
+
+  /**
+   * In-app alert for real-time order notifications.
+   * Tries local notification with sound first, then falls back to haptics.
+   */
+  async playInAppAlert(title: string, body: string) {
+    if (!Notifications) {
+      await this.triggerHapticsFallback();
+      this.triggerVibrationFallback();
+      return;
+    }
+
+    try {
+      const permitted = await this.ensureLocalPermission();
+      if (!permitted) {
+        await this.triggerHapticsFallback();
+        this.triggerVibrationFallback();
+        return;
+      }
+      await this.ensureAndroidChannel();
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+          ...(Platform.OS === 'android' ? { channelId: 'orders' } : {}),
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.warn('Failed to play in-app notification alert:', error);
+      await this.triggerHapticsFallback();
+      this.triggerVibrationFallback();
+    }
+  }
 
   /**
    * Register for push notifications
    */
   async registerForPushNotifications() {
-    // Skip if in Expo Go
-    if (isExpoGo || !Notifications || !Device) {
+    // Skip if in Expo Go (remote push not supported there)
+    if (!canUseExpoNotifications || !Notifications || !Device) {
       console.log('Push notifications require a development build (not available in Expo Go)');
       return null;
     }
@@ -85,12 +195,7 @@ class NotificationService {
 
       // Configure notification channel for Android
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('orders', {
-          name: 'Orders',
-          importance: Notifications.AndroidImportance.HIGH,
-          sound: 'default',
-          vibrationPattern: [0, 250, 250, 250],
-        });
+        await this.ensureAndroidChannel();
       }
 
       return this.expoPushToken;
@@ -104,28 +209,27 @@ class NotificationService {
    * Schedule a local notification (for testing)
    */
   async scheduleLocalNotification(title: string, body: string) {
-    if (isExpoGo || !Notifications) {
-      console.log('Notifications not available in Expo Go');
+    if (!Notifications) {
+      await this.triggerHapticsFallback();
+      this.triggerVibrationFallback();
       return;
     }
 
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sound: true,
-        priority: Notifications.AndroidNotificationPriority.HIGH,
-      },
-      trigger: null, // Show immediately
-    });
+    const permitted = await this.ensureLocalPermission();
+    if (!permitted) {
+      await this.triggerHapticsFallback();
+      this.triggerVibrationFallback();
+      return;
+    }
+
+    await this.playInAppAlert(title, body);
   }
 
   /**
    * Add listener for received notifications
    */
   addNotificationReceivedListener(callback: (notification: any) => void) {
-    if (isExpoGo || !Notifications) {
-      console.log('Notifications not available in Expo Go');
+    if (!Notifications) {
       return null;
     }
     return Notifications.addNotificationReceivedListener(callback);
@@ -135,8 +239,7 @@ class NotificationService {
    * Add listener for notification responses (user tapped notification)
    */
   addNotificationResponseReceivedListener(callback: (response: any) => void) {
-    if (isExpoGo || !Notifications) {
-      console.log('Notifications not available in Expo Go');
+    if (!Notifications) {
       return null;
     }
     return Notifications.addNotificationResponseReceivedListener(callback);
@@ -146,7 +249,7 @@ class NotificationService {
    * Get last notification response (useful on app startup)
    */
   async getLastNotificationResponse() {
-    if (isExpoGo || !Notifications) {
+    if (!Notifications) {
       return null;
     }
     return await Notifications.getLastNotificationResponseAsync();
@@ -156,7 +259,7 @@ class NotificationService {
    * Dismiss all notifications
    */
   async dismissAllNotifications() {
-    if (isExpoGo || !Notifications) {
+    if (!Notifications) {
       return;
     }
     await Notifications.dismissAllNotificationsAsync();

@@ -9,6 +9,9 @@ export default function AnimatedSplash({ onFinish }: AnimatedSplashProps) {
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.9)).current;
   const screenOpacity = useRef(new Animated.Value(1)).current;
+  // Store onFinish in a ref so animation never reruns if parent re-renders
+  const onFinishRef = useRef(onFinish);
+  useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
 
   useEffect(() => {
     const sequence = Animated.sequence([
@@ -36,11 +39,13 @@ export default function AnimatedSplash({ onFinish }: AnimatedSplashProps) {
     ]);
 
     sequence.start(({ finished }) => {
-      if (finished) onFinish();
+      if (finished) onFinishRef.current();
     });
 
     return () => sequence.stop();
-  }, [logoOpacity, logoScale, onFinish, screenOpacity]);
+  // Run only once on mount — onFinishRef handles updates without re-running
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <Animated.View style={[styles.container, { opacity: screenOpacity }]}>

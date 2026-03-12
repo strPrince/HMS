@@ -1,31 +1,42 @@
 import { useMemo, useState, useCallback, memo } from 'react';
-import { Pressable, FlatList, StyleSheet, Text, View, RefreshControl } from 'react-native';
+import { Alert, Pressable, FlatList, StyleSheet, Text, View, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Bell, Users, Utensils, Receipt } from 'lucide-react-native';
+import { Bell, Users, Utensils, Receipt, CheckCircle2 } from 'lucide-react-native';
 import { colors } from '../../constants/colors';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
+import { useNotificationStore } from '../../store/useNotificationStore';
+import { NotificationPanel } from '../../components/NotificationPanel';
 import { formatDuration } from '../../utils/helpers';
 import { useAuth } from '../../providers/AuthProvider';
 
-type FilterKey = 'all' | 'occupied' | 'billing';
+type FilterKey = 'all' | 'occupied' | 'ready' | 'billing';
 
 const TableCard = memo(function TableCard({
   table,
   activeOrder,
+  hasReadyOrder,
+  readyOrderCount,
+  totalItemCount,
   onPress
 }: {
   table: any;
   activeOrder: any;
+  hasReadyOrder: boolean;
+  readyOrderCount: number;
+  totalItemCount: number;
   onPress: () => void;
 }) {
   const isAvailable = table.status === 'available';
   const isBilling = table.status === 'billing';
+  const isReadyToServe = !isAvailable && !isBilling && hasReadyOrder;
   const cardStyle = isAvailable
     ? styles.cardFree
-    : isBilling
-      ? styles.cardBilling
-      : styles.cardOccupied;
+    : isReadyToServe
+      ? styles.cardReady
+      : isBilling
+        ? styles.cardBilling
+        : styles.cardOccupied;
   const textColor = isAvailable ? '#D0D0D0' : '#FFF';
 
   return (
@@ -36,12 +47,12 @@ const TableCard = memo(function TableCard({
       {!isAvailable && (
         <View style={styles.cardHeader}>
           <Text style={styles.statusBadge}>
-            {isBilling ? 'BILLING' : activeOrder?.status === 'ready' ? 'READY' : 'OCCUPIED'}
+            {isBilling ? 'BILLING' : isReadyToServe ? `READY (${readyOrderCount})` : 'OCCUPIED'}
           </Text>
-          {isBilling ? (
+          {isReadyToServe ? (
+            <CheckCircle2 size={18} color="#FFF" />
+          ) : isBilling ? (
             <Receipt size={18} color="#FFF" />
-          ) : activeOrder?.status === 'ready' ? (
-            <Utensils size={18} color="#FFF" />
           ) : (
             <Users size={18} color="#FFF" />
           )}
@@ -55,7 +66,7 @@ const TableCard = memo(function TableCard({
       </Text>
       {activeOrder && !isAvailable ? (
         <Text style={styles.tableMeta}>
-          {activeOrder.items.reduce((sum: number, item: any) => sum + item.quantity, 0)} items
+          {totalItemCount} items
           {table.elapsedMinutes ? ` • ${formatDuration(table.elapsedMinutes)}` : ''}
         </Text>
       ) : null}
@@ -65,8 +76,11 @@ const TableCard = memo(function TableCard({
   return (
     prev.table.id === next.table.id &&
     prev.table.status === next.table.status &&
+    prev.hasReadyOrder === next.hasReadyOrder &&
+    prev.readyOrderCount === next.readyOrderCount &&
     prev.table.elapsedMinutes === next.table.elapsedMinutes &&
-    prev.activeOrder?.id === next.activeOrder?.id
+    prev.activeOrder?.id === next.activeOrder?.id &&
+    prev.totalItemCount === next.totalItemCount
   );
 });
 
@@ -74,29 +88,51 @@ export default function Tables() {
   const tables = useRestaurantStore(state => state.tables);
   const selectTable = useRestaurantStore(state => state.selectTable);
   const getTableActiveOrder = useRestaurantStore(state => state.getTableActiveOrder);
+  const getTableAllActiveOrders = useRestaurantStore(state => state.getTableAllActiveOrders);
   const clearCart = useRestaurantStore(state => state.clearCart);
   const refreshOrdersFromApi = useRestaurantStore(state => state.refreshOrdersFromApi);
   const refreshTablesFromApi = useRestaurantStore(state => state.refreshTablesFromApi);
+  const notifications = useNotificationStore((state) => state.notifications);
+  const unreadCount = notifications.filter((n) => !n.isRead && n.type === 'order_ready').length;
   const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
 
   const filteredTables = useMemo(() => {
     if (filter === 'all') return tables;
+    if (filter === 'ready') {
+      return tables.filter((table) => {
+        const allOrders = getTableAllActiveOrders(table.id);
+        return allOrders.some((order) => order.status === 'ready');
+      });
+    }
     return tables.filter((table) => table.status === filter);
-  }, [filter, tables]);
+  }, [filter, tables, getTableAllActiveOrders]);
 
   const handleTablePress = useCallback((table: any) => {
     selectTable(table);
 
-    const activeOrder = getTableActiveOrder(table.id);
+    const allOrders = getTableAllActiveOrders(table.id);
+    const latestOrder = [...allOrders].sort((a, b) => {
+      const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return bTime - aTime;
+    })[0];
+    const activeOrder = getTableActiveOrder(table.id) || latestOrder;
 
     if (activeOrder) {
       if (activeOrder.status === 'billing') {
-        router.push(`/generate-bill?tableId=${table.id}`);
+        // Billing is managed by the manager on the dashboard.
+        // Waiter's job is done — show a brief info alert.
+        Alert.alert(
+          'Bill in Progress',
+          'This table is waiting for the manager to process the bill.\n\nYou will be notified once payment is complete.',
+          [{ text: 'OK' }]
+        );
       } else if (activeOrder.status === 'ready') {
         router.push(`/order/${activeOrder.id}`);
       } else {
@@ -106,18 +142,27 @@ export default function Tables() {
       clearCart();
       router.push(`/create-order?tableId=${table.id}`);
     }
-  }, [selectTable, getTableActiveOrder, clearCart, router]);
+  }, [selectTable, getTableActiveOrder, getTableAllActiveOrders, clearCart, router]);
 
   const renderTableCard = useCallback(({ item }: { item: any }) => {
     const activeOrder = getTableActiveOrder(item.id);
+    const allOrders = getTableAllActiveOrders(item.id);
+    const readyOrderCount = allOrders.filter((order) => order.status === 'ready').length;
+    const hasReadyOrder = readyOrderCount > 0;
+    const totalItemCount = allOrders.reduce(
+      (sum, o) => sum + o.items.reduce((s: number, i: any) => s + i.quantity, 0), 0
+    );
     return (
       <TableCard
         table={item}
         activeOrder={activeOrder}
+        hasReadyOrder={hasReadyOrder}
+        readyOrderCount={readyOrderCount}
+        totalItemCount={totalItemCount}
         onPress={() => handleTablePress(item)}
       />
     );
-  }, [getTableActiveOrder, handleTablePress]);
+  }, [getTableActiveOrder, getTableAllActiveOrders, handleTablePress]);
 
   const keyExtractor = useCallback((item: any) => item.id, []);
 
@@ -140,8 +185,13 @@ export default function Tables() {
           <Text style={styles.headerTitle}>Floor Plan</Text>
         </View>
         <View style={styles.headerRight}>
-          <Pressable style={styles.iconButton}>
+          <Pressable style={styles.iconButton} onPress={() => setShowNotifications(true)}>
             <Bell size={20} color="#666" />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount}</Text>
+              </View>
+            )}
           </Pressable>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
@@ -167,6 +217,7 @@ export default function Tables() {
             data={[
               { key: 'all', label: 'All Tables' },
               { key: 'occupied', label: 'Occupied' },
+              { key: 'ready', label: 'Ready' },
               { key: 'billing', label: 'Billing' },
             ]}
             keyExtractor={(item) => item.key}
@@ -188,6 +239,9 @@ export default function Tables() {
                 )}
                 {item.key === 'occupied' && (
                   <View style={styles.statusDot} />
+                )}
+                {item.key === 'ready' && (
+                  <View style={styles.statusDotReady} />
                 )}
                 {item.key === 'billing' && (
                   <Receipt size={14} color={filter === item.key ? '#FFF' : '#666'} />
@@ -215,6 +269,8 @@ export default function Tables() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF6B35" />
         }
       />
+
+      <NotificationPanel visible={showNotifications} onClose={() => setShowNotifications(false)} />
     </View>
   );
 }
@@ -270,7 +326,27 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    position: 'relative'
+  },
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#F8F7F5'
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700'
   },
   avatar: {
     width: 32,
@@ -341,6 +417,12 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#ff6a00'
   },
+  statusDotReady: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#16A34A'
+  },
   checkIcon: {
     fontSize: 16,
     color: '#22C55E',
@@ -371,6 +453,11 @@ const styles = StyleSheet.create({
   cardBilling: {
     backgroundColor: '#F59E0B',
     shadowColor: '#F59E0B',
+    shadowOpacity: 0.2
+  },
+  cardReady: {
+    backgroundColor: '#22C55E',
+    shadowColor: '#22C55E',
     shadowOpacity: 0.2
   },
   cardOccupied: {

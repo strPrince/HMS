@@ -6,6 +6,26 @@ import { getCurrentTimestamp } from '../src/utils/formatDate';
 import MenuService from '../src/services/menu.service';
 import TableService from '../src/services/table.service';
 import OrderService from '../src/services/order.service';
+import socketService from '../src/services/socket.service';
+
+let lastOfflineWarnAt = 0;
+
+const isNetworkLikeError = (error: any) => {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('network error') || message.includes('timeout') || message.includes('xhr');
+};
+
+const isAuthError = (error: any) => {
+  return error?.response?.status === 401;
+};
+
+const warnOfflineOnce = (scope: string, error: any) => {
+  const now = Date.now();
+  if (now - lastOfflineWarnAt < 15000) return;
+  const message = error?.message || 'Network unavailable';
+  console.warn(`[Offline] ${scope}: ${message}`);
+  lastOfflineWarnAt = now;
+};
 
 // Cart item type for temporary order creation
 type CartItem = OrderItem & {
@@ -31,6 +51,7 @@ interface RestaurantStore {
   // Tables
   addTable: (table: Table) => void;
   updateTable: (id: string, table: Partial<Table>) => void;
+  updateTableStatus: (tableId: string, status: Table['status']) => Promise<void>;
   deleteTable: (id: string) => void;
   selectTable: (table: Table | null) => void;
 
@@ -41,6 +62,7 @@ interface RestaurantStore {
   selectOrder: (order: Order | null) => void;
   submitOrderToKitchen: (tableId: string, waiterName?: string) => Promise<Order | null>;
   markOrderAsReady: (orderId: string) => Promise<void>;
+  markOrderAsDelivered: (orderId: string) => Promise<void>;
   moveOrderToBilling: (orderId: string) => Promise<void>;
   completeOrder: (orderId: string, discountPercent?: number, paymentMethod?: PaymentMethod) => void;
 
@@ -59,6 +81,9 @@ interface RestaurantStore {
   getOrderItems: (orderId: string) => { item: MenuItem; quantity: number }[];
   getOrderTotal: (orderId: string) => number;
   getTableActiveOrder: (tableId: string) => Order | null;
+  getTableAllActiveOrders: (tableId: string) => Order[];
+  getTableCombinedItems: (tableId: string) => { item: MenuItem; quantity: number }[];
+  getTableCombinedTotal: (tableId: string) => number;
   getKitchenOrders: () => Order[];
 
   // Backend sync
@@ -86,13 +111,15 @@ const mapOrderStatus = (status: string): Order['status'] => {
   const normalized = String(status || '').trim().toLowerCase().replace(/\s+/g, '_');
   if (normalized === 'in_kitchen' || normalized === 'in-kitchen' || normalized === 'inkitchen') return 'in-kitchen';
   if (normalized === 'new') return 'pending';
+  if (normalized === 'confirmed') return 'confirmed';
+  if (normalized === 'preparing') return 'preparing';
   if (normalized === 'ready') return 'ready';
   if (normalized === 'billing') return 'billing';
   if (normalized === 'served') return 'served';
   if (normalized === 'completed') return 'completed';
   if (normalized === 'cancelled') return 'cancelled';
   if (normalized === 'pending') return 'pending';
-  return 'in-kitchen';
+  return 'pending';
 };
 
 const mapOrderItemStatus = (status?: string): OrderItem['status'] => {
@@ -145,13 +172,21 @@ const mapOrderFromApi = (order: any): Order => ({
   updatedAt: order.updatedAt || order.updated_at,
   notes: order.specialNotes || order.special_notes || order.notes || '',
   waiterName: order.waiter?.name,
-  orderType: (order.orderType || order.order_type) === 'parcel' ? 'parcel' : 'dine-in',
+  orderType:
+    String(order.orderType || order.order_type || '')
+      .toLowerCase()
+      .replace(/_/g, '-') === 'parcel'
+      ? 'parcel'
+      : 'dine-in',
   paymentMethod: order.paymentMethod || undefined,
   items: (order.orderItems || order.order_items || order.items || []).map((line: any) => ({
     itemId: `m${String(getApiId(line?.menuItem ? line.menuItem : line) || line?.menuItem?.id || line?.item?.id || '')}`,
     quantity: line.quantity,
     status: mapOrderItemStatus(line.status),
-    specialInstructions: line.specialInstructions || '',
+    specialInstructions: line.specialInstructions || line?.customizations?.notes || '',
+    spiceLevel: line?.spiceLevel || line?.customizations?.spiceLevel || '',
+    dietPreference: line?.dietPreference || line?.customizations?.dietPreference || '',
+    customizations: line?.customizations || {},
   })),
 });
 
@@ -180,6 +215,32 @@ export const useRestaurantStore = create<RestaurantStore>()(
       updateTable: (id, table) => set((state) => ({
         tables: state.tables.map((t) => t.id === id ? { ...t, ...table } : t)
       })),
+      updateTableStatus: async (tableId, status) => {
+        // Optimistic local update
+        set((state) => ({
+          tables: state.tables.map((t) =>
+            t.id === tableId ? { ...t, status, updatedAt: getCurrentTimestamp() } : t
+          ),
+        }));
+
+        // Try socket emit first, fallback to REST
+        try {
+          const numericId = toNumber(tableId);
+          const socketSuccess = await socketService.emitTableStatusUpdate(numericId, status);
+          
+          if (!socketSuccess) {
+            // Socket failed or not connected, use REST API
+            console.log('Using REST API fallback for updateTableStatus');
+            await TableService.updateTableStatus(String(numericId), status);
+          }
+          
+          // Refresh from server to ensure consistency
+          await get().refreshTablesFromApi();
+        } catch (error) {
+          console.warn('Failed to sync updateTableStatus to backend:', (error as any)?.message);
+          try { await get().refreshTablesFromApi(); } catch (_) {}
+        }
+      },
       deleteTable: (id) => set((state) => ({
         tables: state.tables.filter((t) => t.id !== id)
       })),
@@ -243,33 +304,80 @@ export const useRestaurantStore = create<RestaurantStore>()(
         const { orders } = get();
         return orders.find((o) =>
           o.tableId === tableId &&
-          (o.status === 'in-kitchen' || o.status === 'ready' || o.status === 'billing' || o.status === 'pending')
+          (o.status === 'pending' || o.status === 'confirmed' || o.status === 'preparing' || o.status === 'in-kitchen' || o.status === 'ready' || o.status === 'billing')
         ) || null;
+      },
+
+      getTableAllActiveOrders: (tableId) => {
+        const { orders } = get();
+        return orders.filter((o) =>
+          o.tableId === tableId &&
+          o.status !== 'cancelled' && o.status !== 'completed'
+        );
+      },
+
+      getTableCombinedItems: (tableId) => {
+        const allOrders = get().getTableAllActiveOrders(tableId);
+        const { menuItems } = get();
+        const map = new Map<string, { item: MenuItem; quantity: number }>();
+        for (const order of allOrders) {
+          for (const { itemId, quantity } of order.items) {
+            const item = menuItems.find((mi) => mi.id === itemId) || { id: itemId, name: 'Item', price: 0 };
+            const existing = map.get(itemId);
+            if (existing) {
+              map.set(itemId, { ...existing, quantity: existing.quantity + quantity });
+            } else {
+              map.set(itemId, { item, quantity });
+            }
+          }
+        }
+        return Array.from(map.values());
+      },
+
+      getTableCombinedTotal: (tableId) => {
+        const items = get().getTableCombinedItems(tableId);
+        return items.reduce((sum, { item, quantity }) => sum + item.price * quantity, 0);
       },
 
       getKitchenOrders: () => {
         const { orders } = get();
-        return orders.filter((o) => o.status === 'in-kitchen' || o.status === 'ready');
+        return orders.filter((o) => o.status === 'pending' || o.status === 'confirmed' || o.status === 'preparing' || o.status === 'in-kitchen' || o.status === 'ready');
       },
 
       loadInitialData: async () => {
         try {
-          const [menuRaw, tablesRaw, ordersRaw] = await Promise.all([
+          // Use Promise.allSettled to load independently - don't let one failure block others
+          const [menuResult, tablesResult, ordersResult] = await Promise.allSettled([
             MenuService.getMenuItems(),
             TableService.getTables(),
             OrderService.getOrders(),
           ]);
 
-          const apiMenuItems = normalizeArray(menuRaw).map(mapMenuItemFromApi).filter((item) => item.id !== 'm');
-          const apiTables = normalizeArray(tablesRaw).map(mapTableFromApi).filter((table) => table.id !== 't');
-          const apiOrders = normalizeArray(ordersRaw).map(mapOrderFromApi).filter((order) => order.id !== 'o');
+          const apiMenuItems = menuResult.status === 'fulfilled' 
+            ? normalizeArray(menuResult.value).map(mapMenuItemFromApi).filter((item) => item.id !== 'm')
+            : [];
+          const apiTables = tablesResult.status === 'fulfilled'
+            ? normalizeArray(tablesResult.value).map(mapTableFromApi).filter((table) => table.id !== 't')
+            : [];
+          const apiOrders = ordersResult.status === 'fulfilled'
+            ? normalizeArray(ordersResult.value).map(mapOrderFromApi).filter((order) => order.id !== 'o')
+            : [];
 
+          // Update with whatever we successfully fetched (partial updates are OK)
           set({
-            menuItems: apiMenuItems,
-            tables: apiTables,
-            orders: apiOrders,
+            menuItems: apiMenuItems.length > 0 ? apiMenuItems : get().menuItems,
+            tables: apiTables.length > 0 ? apiTables : get().tables,
+            orders: apiOrders.length > 0 ? apiOrders : get().orders,
           });
+
+          // Log individual failures for debugging
+          if (menuResult.status === 'rejected') console.warn('[Store] Menu load failed:', menuResult.reason?.message);
+          if (tablesResult.status === 'rejected') console.warn('[Store] Tables load failed:', tablesResult.reason?.message);
+          if (ordersResult.status === 'rejected') console.warn('[Store] Orders load failed:', ordersResult.reason?.message);
         } catch (error) {
+          if (isAuthError(error)) {
+            return;
+          }
           console.warn('Failed to load initial restaurant data:', (error as any)?.message);
         }
       },
@@ -280,6 +388,13 @@ export const useRestaurantStore = create<RestaurantStore>()(
           const orders = normalizeArray(ordersRaw).map(mapOrderFromApi).filter((order) => order.id !== 'o');
           set({ orders });
         } catch (error) {
+          if (isAuthError(error)) {
+            return;
+          }
+          if (isNetworkLikeError(error)) {
+            warnOfflineOnce('orders sync paused', error);
+            return;
+          }
           console.error('Failed to refresh orders from API:', error);
         }
       },
@@ -290,6 +405,13 @@ export const useRestaurantStore = create<RestaurantStore>()(
           const tables = normalizeArray(tablesRaw).map(mapTableFromApi).filter((table) => table.id !== 't');
           set({ tables });
         } catch (error) {
+          if (isAuthError(error)) {
+            return;
+          }
+          if (isNetworkLikeError(error)) {
+            warnOfflineOnce('tables sync paused', error);
+            return;
+          }
           console.error('Failed to refresh tables from API:', error);
         }
       },
@@ -300,23 +422,34 @@ export const useRestaurantStore = create<RestaurantStore>()(
           const menuItems = normalizeArray(menuRaw).map(mapMenuItemFromApi).filter((item) => item.id !== 'm');
           set({ menuItems });
         } catch (error) {
+          if (isAuthError(error)) {
+            return;
+          }
+          if (isNetworkLikeError(error)) {
+            warnOfflineOnce('menu sync paused', error);
+            return;
+          }
           console.error('Failed to refresh menu from API:', error);
         }
       },
 
       submitOrderToKitchen: async (tableId, _waiterName) => {
-        const { cart, orderType } = get();
+        const { cart } = get();
         if (cart.length === 0) return null;
 
         let created: any = null;
         try {
           created = await OrderService.createOrder({
             tableId: toNumber(tableId),
-            orderType: orderType === 'parcel' ? 'parcel' : 'dine_in',
+            orderType: 'dine_in',
             items: cart.map((item) => ({
               menuItemId: toNumber(item.itemId),
               quantity: item.quantity,
-              specialInstructions: item.specialInstructions,
+              customizations: {
+                ...(item.specialInstructions ? { notes: item.specialInstructions } : {}),
+                ...(item.spiceLevel ? { spiceLevel: item.spiceLevel } : {}),
+                ...(item.dietPreference ? { dietPreference: item.dietPreference } : {}),
+              },
             })),
           });
         } catch (error) {
@@ -349,14 +482,69 @@ export const useRestaurantStore = create<RestaurantStore>()(
           ),
         }));
 
-        // Sync to backend
+        // Try socket emit first, fallback to REST
         try {
-          const numericId = String(toNumber(orderId));
-          await OrderService.updateOrderPut(numericId, { status: 'ready' });
+          const numericId = toNumber(orderId);
+          const socketSuccess = await socketService.emitOrderStatusUpdate(numericId, 'ready');
+          
+          if (!socketSuccess) {
+            // Socket failed or not connected, use REST API
+            console.log('Using REST API fallback for markOrderAsReady');
+            await OrderService.updateOrderPut(String(numericId), { status: 'ready' });
+          }
+          
+          // Refresh from server to ensure consistency
           await get().refreshOrdersFromApi();
           await get().refreshTablesFromApi();
         } catch (error) {
           console.warn('Failed to sync markOrderAsReady to backend:', (error as any)?.message);
+          // Still refresh to get the server truth
+          try { await get().refreshOrdersFromApi(); } catch (_) {}
+        }
+      },
+
+      markOrderAsDelivered: async (orderId) => {
+        const targetOrder = get().orders.find((o) => o.id === orderId);
+        if (!targetOrder) return;
+
+        // Optimistic local update
+        set((state) => {
+          const nextOrders = state.orders.map((o) =>
+            o.id === orderId ? { ...o, status: 'served' as const, updatedAt: getCurrentTimestamp() } : o
+          );
+
+          const hasOtherReadyOrders = nextOrders.some(
+            (o) => o.tableId === targetOrder.tableId && o.id !== orderId && o.status === 'ready'
+          );
+
+          return {
+            orders: nextOrders,
+            tables: state.tables.map((t) => {
+              if (t.id !== targetOrder.tableId) return t;
+              if (t.status === 'billing') return t;
+              return { ...t, status: hasOtherReadyOrders ? t.status : 'occupied' as const };
+            }),
+          };
+        });
+
+        // Try socket emit first, fallback to REST
+        try {
+          const numericId = toNumber(orderId);
+          const socketSuccess = await socketService.emitOrderStatusUpdate(numericId, 'served');
+
+          if (!socketSuccess) {
+            console.log('Using REST API fallback for markOrderAsDelivered');
+            await OrderService.updateOrderPut(String(numericId), { status: 'served' });
+          }
+
+          await get().refreshOrdersFromApi();
+          await get().refreshTablesFromApi();
+        } catch (error) {
+          console.warn('Failed to sync markOrderAsDelivered to backend:', (error as any)?.message);
+          try {
+            await get().refreshOrdersFromApi();
+            await get().refreshTablesFromApi();
+          } catch (_) {}
         }
       },
 
@@ -461,4 +649,15 @@ export const useRestaurantStore = create<RestaurantStore>()(
   )
 );
 
-
+// Setup reconnection handler to refresh data after socket reconnects
+socketService.onReconnect(() => {
+  console.log('Socket reconnected - refreshing data');
+  const store = useRestaurantStore.getState();
+  Promise.all([
+    store.refreshOrdersFromApi(),
+    store.refreshTablesFromApi(),
+    store.refreshMenuFromApi(),
+  ]).catch(error => {
+    console.error('Error refreshing data on reconnect:', error);
+  });
+});

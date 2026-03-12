@@ -26,9 +26,12 @@ export type OrderItem = {
   quantity: number;
   status?: OrderItemStatus;
   specialInstructions?: string;
+  spiceLevel?: string;
+  dietPreference?: string;
+  customizations?: Record<string, unknown>;
 };
 
-export type OrderStatus = 'pending' | 'in-kitchen' | 'ready' | 'billing' | 'served' | 'completed' | 'cancelled';
+export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'in-kitchen' | 'ready' | 'billing' | 'served' | 'completed' | 'cancelled';
 
 export type OrderType = 'dine-in' | 'parcel';
 export type PaymentMethod = 'cash' | 'card' | 'upi';

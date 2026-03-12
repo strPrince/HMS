@@ -2,8 +2,8 @@ import { useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View, TextInput, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ArrowLeft, Plus, Minus, Trash2, ChefHat, X, Save, Edit } from 'lucide-react-native';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Plus, Minus, Trash2, ChefHat, X, Save, Edit, Send } from 'lucide-react-native';
 import { colors } from '../../constants/colors';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
 import { formatCurrency, formatTimeAgo } from '../../utils/helpers';
@@ -13,17 +13,26 @@ import OrderService from '../../src/services/order.service';
 
 export default function OrderDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
-  const { orders, tables, menuItems, getOrderItems, getOrderTotal, selectTable, updateOrder, refreshOrdersFromApi } = useRestaurantStore();
+  const { orders, tables, menuItems, getOrderItems, getOrderTotal, selectTable, updateOrder, markOrderAsDelivered, refreshOrdersFromApi, refreshTablesFromApi, getTableAllActiveOrders, getTableCombinedItems } = useRestaurantStore();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+
+  // Refresh data from API on mount to ensure we have latest orders
+  useEffect(() => {
+    refreshOrdersFromApi();
+    refreshTablesFromApi();
+  }, []);
 
   const order = orders.find((o) => o.id === orderId);
   const [isEditing, setIsEditing] = useState(false);
   const [localItems, setLocalItems] = useState(order?.items || []);
   const [notes, setNotes] = useState(order?.notes || '');
-  const [orderStatus, setOrderStatus] = useState(order?.status || 'in-kitchen');
+  const [orderStatus, setOrderStatus] = useState(order?.status || 'pending');
   const [processingBilling, setProcessingBilling] = useState(false);
+  const [markingDelivered, setMarkingDelivered] = useState(false);
+  const [showBillSummary, setShowBillSummary] = useState(false);
+  const [sendingToManager, setSendingToManager] = useState(false);
 
   if (!order) {
     return (
@@ -37,11 +46,16 @@ export default function OrderDetails() {
   const tableLabel = table?.label || order.tableId;
   const items = getOrderItems(order.id);
 
-  // Calculate totals from local items when editing
+  // Get ALL active orders for this table and their combined items
+  const allTableOrders = table ? getTableAllActiveOrders(table.id) : [order];
+  const combinedItems = table ? getTableCombinedItems(table.id) : items;
+  const orderCount = allTableOrders.length;
+
+  // Calculate totals from local items when editing, otherwise from combined items
   const displayItems = isEditing ? localItems.map(li => {
     const menuItem = menuItems.find(mi => mi.id === li.itemId);
     return { item: menuItem || { id: li.itemId, name: 'Unknown', price: 0 }, quantity: li.quantity };
-  }) : items;
+  }) : combinedItems;
 
   const subtotal = displayItems.reduce((sum, { item, quantity }) => sum + (item.price * quantity), 0);
   const gst = Math.round(subtotal * 0.05 * 100) / 100;
@@ -88,10 +102,19 @@ export default function OrderDetails() {
     );
   };
 
-  const handleSaveChanges = () => {
+  const handleSaveChanges = async () => {
     if (localItems.length === 0) {
       Alert.alert('Error', 'Order must have at least one item');
       return;
+    }
+
+    try {
+      // Persist notes to backend
+      const numId = orderId.replace(/^o/, '');
+      await OrderService.updateOrder(numId, { specialNotes: notes } as any);
+    } catch (e) {
+      console.warn('[OrderDetails] Failed to save notes to backend:', e);
+      // Continue to update local state even if API fails
     }
 
     updateOrder(orderId, {
@@ -114,7 +137,7 @@ export default function OrderDetails() {
   const handleCompleteOrder = () => {
     Alert.alert(
       'Send to Billing',
-      'Move this order to billing and generate bill?',
+      `Move ${orderCount > 1 ? `all ${orderCount} orders` : 'this order'} to billing?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -128,16 +151,22 @@ export default function OrderDetails() {
                 await TableService.updateTableStatus(table.id.replace(/^t/, ''), 'billing');
               }
 
-              await OrderService.updateOrder(orderId.replace(/^o/, ''), { status: 'billing' });
-
-              // Update local store to billing state
-              updateOrder(orderId, { status: 'billing' });
+              // Move ALL orders for this table to billing
+              for (const o of allTableOrders) {
+                const numId = o.id.replace(/^o/, '');
+                try {
+                  await OrderService.updateOrder(numId, { status: 'billing' });
+                  updateOrder(o.id, { status: 'billing' });
+                } catch (e) {
+                  console.warn(`Failed to move order ${numId} to billing:`, e);
+                }
+              }
 
               await refreshOrdersFromApi();
+              await refreshTablesFromApi();
 
-              Alert.alert('Success', 'Order moved to billing', [
-                { text: 'OK', onPress: () => router.push(`/generate-bill?orderId=${orderId}&tableId=${order.tableId}`) }
-              ]);
+              // Show read-only bill summary for waiter
+              setShowBillSummary(true);
             } catch (error) {
               Alert.alert('Error', 'Failed to move order to billing. Please try again.');
             } finally {
@@ -149,6 +178,50 @@ export default function OrderDetails() {
     );
   };
 
+  const handleSendToManager = async () => {
+    if (sendingToManager) return;
+    setSendingToManager(true);
+    try {
+      // Send billing request notification to manager via API
+      const tableNumId = table?.id?.replace(/^t/, '') || '';
+      const orderNumId = order.id.replace(/^o/, '');
+      await OrderService.sendBillingRequest({
+        tableId: Number(tableNumId),
+        orderId: Number(orderNumId),
+        tableLabel: tableLabel,
+        waiterName: user?.name || 'Waiter',
+        itemCount: displayItems.length,
+        total: grandTotal,
+      });
+
+      Alert.alert('Sent!', 'Manager has been notified for billing.', [
+        { text: 'OK', onPress: () => router.replace('/(tabs)/tables') }
+      ]);
+    } catch (error) {
+      console.warn('Failed to send billing notification, navigating anyway');
+      Alert.alert('Notified', 'Order moved to billing. Manager will see it on dashboard.', [
+        { text: 'OK', onPress: () => router.replace('/(tabs)/tables') }
+      ]);
+    } finally {
+      setSendingToManager(false);
+    }
+  };
+
+  const handleMarkDelivered = async () => {
+    if (markingDelivered) return;
+    setMarkingDelivered(true);
+    try {
+      await markOrderAsDelivered(order.id);
+      setOrderStatus('served');
+      Alert.alert('Delivered', 'Order marked as delivered successfully.');
+    } catch (error) {
+      console.warn('Failed to mark order as delivered:', error);
+      Alert.alert('Error', 'Could not mark as delivered. Please try again.');
+    } finally {
+      setMarkingDelivered(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 8 }]} showsVerticalScrollIndicator={false}>
@@ -156,7 +229,7 @@ export default function OrderDetails() {
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <ArrowLeft size={20} color={colors.textStrong} />
           </Pressable>
-          <Text style={styles.title}>Order #{order.id.replace('o', '')}</Text>
+          <Text style={styles.title}>{orderCount > 1 ? `Table ${tableLabel}` : `Order #${order.id.replace('o', '')}`}</Text>
           {!isEditing && orderStatus !== 'completed' && (
             <Pressable style={styles.iconButton} onPress={() => setIsEditing(true)}>
               <Edit size={18} color={colors.textStrong} />
@@ -169,7 +242,7 @@ export default function OrderDetails() {
           )}
         </View>
 
-        <Text style={styles.subTitle}>Table {tableLabel} • Dine In</Text>
+        <Text style={styles.subTitle}>Table {tableLabel} • Dine In{orderCount > 1 ? ` • ${orderCount} orders` : ''}</Text>
 
         <View style={styles.infoCard}>
           <View style={styles.infoGrid}>
@@ -196,7 +269,7 @@ export default function OrderDetails() {
           <Text style={styles.statusTitle}>STATUS LOG</Text>
           {isEditing && orderStatus !== 'completed' && (
             <View style={styles.statusButtons}>
-              {['pending', 'in-kitchen', 'ready'].map((status) => (
+              {['pending', 'preparing', 'ready'].map((status) => (
                 <Pressable
                   key={status}
                   style={[
@@ -216,10 +289,10 @@ export default function OrderDetails() {
             </View>
           )}
           <View style={styles.statusRow}>
-            <View style={[styles.statusDot, orderStatus === 'in-kitchen' && styles.statusDotActive]} />
+            <View style={[styles.statusDot, orderStatus === 'preparing' && styles.statusDotActive]} />
             <View style={styles.statusContent}>
-              <Text style={orderStatus === 'in-kitchen' ? styles.statusTextPrimary : styles.statusTextPrimaryMuted}>
-                {orderStatus === 'in-kitchen' ? 'Cooking' : orderStatus === 'ready' ? 'Ready' : 'Pending'}
+              <Text style={orderStatus === 'preparing' ? styles.statusTextPrimary : styles.statusTextPrimaryMuted}>
+                {orderStatus === 'preparing' ? 'Cooking' : orderStatus === 'ready' ? 'Ready' : 'Pending'}
               </Text>
               <Text style={styles.statusTextSecondary}>
                 {startedText}
@@ -315,14 +388,72 @@ export default function OrderDetails() {
               <Text style={styles.saveBtnText}>Save Changes</Text>
             </Pressable>
           </View>
+        ) : showBillSummary ? (
+          /* Read-only bill summary for waiter after completing order */
+          <View style={styles.billSummarySection}>
+            <View style={styles.billSummaryCard}>
+              <Text style={styles.billSummaryTitle}>📋 Bill Summary</Text>
+              <Text style={styles.billSummarySubtext}>Review and send to manager for payment</Text>
+
+              <View style={styles.billDivider} />
+
+              {displayItems.map(({ item, quantity }) => (
+                <View key={item.id} style={styles.billItemRow}>
+                  <Text style={styles.billItemName}>{quantity}x {item.name}</Text>
+                  <Text style={styles.billItemPrice}>{formatCurrency(item.price * quantity)}</Text>
+                </View>
+              ))}
+
+              <View style={styles.billDivider} />
+
+              <View style={styles.billTotalRow}>
+                <Text style={styles.billTotalLabel}>Subtotal</Text>
+                <Text style={styles.billTotalValue}>{formatCurrency(subtotal)}</Text>
+              </View>
+              <View style={styles.billTotalRow}>
+                <Text style={styles.billTotalLabel}>GST (5%)</Text>
+                <Text style={styles.billTotalValue}>{formatCurrency(gst)}</Text>
+              </View>
+              <View style={[styles.billTotalRow, { marginTop: 4 }]}>
+                <Text style={styles.billGrandLabel}>Grand Total</Text>
+                <Text style={styles.billGrandValue}>{formatCurrency(grandTotal)}</Text>
+              </View>
+            </View>
+
+            <Pressable
+              style={[styles.sendToManagerBtn, sendingToManager && { opacity: 0.6 }]}
+              onPress={handleSendToManager}
+              disabled={sendingToManager}
+            >
+              <Send size={18} color="#FFF" />
+              <Text style={styles.sendToManagerBtnText}>
+                {sendingToManager ? 'Sending...' : 'Send to Manager'}
+              </Text>
+            </Pressable>
+
+            <Pressable style={styles.backToTablesBtn} onPress={() => router.replace('/(tabs)/tables')}>
+              <Text style={styles.backToTablesBtnText}>Back to Tables</Text>
+            </Pressable>
+          </View>
         ) : orderStatus !== 'completed' && (
-          <View style={styles.actionButtons}>
-            <Pressable style={styles.addButton} onPress={handleAddMore}>
-              <Text style={styles.addButtonText}>＋ Add More Items</Text>
-            </Pressable>
-            <Pressable style={styles.completeBtn} onPress={handleCompleteOrder}>
-              <Text style={styles.completeBtnText}>Complete Order</Text>
-            </Pressable>
+          <View>
+            {order.status === 'ready' && (
+              <Pressable
+                style={[styles.deliveredBtn, markingDelivered && { opacity: 0.6 }]}
+                onPress={handleMarkDelivered}
+                disabled={markingDelivered}
+              >
+                <Text style={styles.deliveredBtnText}>{markingDelivered ? 'Marking...' : '✓ Mark Delivered'}</Text>
+              </Pressable>
+            )}
+            <View style={styles.actionButtons}>
+              <Pressable style={styles.addButton} onPress={handleAddMore}>
+                <Text style={styles.addButtonText}>＋ Add More Items</Text>
+              </Pressable>
+              <Pressable style={styles.completeBtn} onPress={handleCompleteOrder}>
+                <Text style={styles.completeBtnText}>Complete Order</Text>
+              </Pressable>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -665,5 +796,112 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.surface
-  }
+  },
+  deliveredBtn: {
+    borderRadius: 14,
+    backgroundColor: '#16A34A',
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  deliveredBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  billSummarySection: {
+    marginTop: 8,
+  },
+  billSummaryCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 14,
+  },
+  billSummaryTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textStrong,
+    textAlign: 'center',
+  },
+  billSummarySubtext: {
+    fontSize: 12,
+    color: colors.mutedDark,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  billDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 12,
+  },
+  billItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  billItemName: {
+    fontSize: 14,
+    color: colors.textStrong,
+    flex: 1,
+  },
+  billItemPrice: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textStrong,
+  },
+  billTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+  },
+  billTotalLabel: {
+    fontSize: 13,
+    color: colors.mutedDark,
+  },
+  billTotalValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textStrong,
+  },
+  billGrandLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textStrong,
+  },
+  billGrandValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  sendToManagerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#7C3AED',
+    borderRadius: 14,
+    paddingVertical: 16,
+    marginBottom: 10,
+  },
+  sendToManagerBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  backToTablesBtn: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  backToTablesBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.mutedDark,
+  },
 });

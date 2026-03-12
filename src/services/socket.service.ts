@@ -10,11 +10,20 @@ import { storage } from './api';
 class SocketService {
   private socket: Socket | null = null;
   private isConnected = false;
+  private reconnectCallbacks: Array<() => void> = [];
+  private lastConnectErrorLogAt = 0;
+
+  /**
+   * Register callback to run on reconnect
+   */
+  onReconnect(callback: () => void) {
+    this.reconnectCallbacks.push(callback);
+  }
 
   /**
    * Connect to Socket.io server
    */
-  async connect(userId: string, role: 'waiter' | 'cook' | 'manager') {
+  async connect(userId: string, role: 'waiter' | 'cook') {
     if (this.socket?.connected) {
       console.log('Socket already connected');
       return;
@@ -22,6 +31,13 @@ class SocketService {
 
     try {
       const token = await storage.getToken();
+
+      // Tear down any stale disconnected instance before creating a new one.
+      if (this.socket && !this.socket.connected) {
+        this.socket.removeAllListeners();
+        this.socket.disconnect();
+        this.socket = null;
+      }
 
       this.socket = io(SOCKET_URL, {
         auth: {
@@ -42,6 +58,15 @@ class SocketService {
 
         // Join role-specific room
         this.socket?.emit('join:room', { userId, role });
+
+        // Execute reconnect callbacks
+        this.reconnectCallbacks.forEach(callback => {
+          try {
+            callback();
+          } catch (error) {
+            console.error('Error in reconnect callback:', error);
+          }
+        });
       });
 
       this.socket.on('disconnect', () => {
@@ -51,7 +76,12 @@ class SocketService {
 
       // Use warn instead of error to avoid triggering Expo's dev overlay
       this.socket.on('connect_error', (error) => {
-        console.warn('Socket connection unavailable (backend offline?):', error.message);
+        const now = Date.now();
+        // Prevent noisy repeated logs when backend is down
+        if (now - this.lastConnectErrorLogAt > 15000) {
+          console.warn('Socket connection unavailable (backend offline?):', error.message);
+          this.lastConnectErrorLogAt = now;
+        }
       });
 
     } catch (error) {
@@ -75,6 +105,7 @@ class SocketService {
    */
   onOrderCreated(callback: (data: any) => void) {
     this.socket?.on('order:created', callback);
+    return () => this.socket?.off('order:created', callback);
   }
 
   /**
@@ -82,6 +113,7 @@ class SocketService {
    */
   onOrderReady(callback: (data: any) => void) {
     this.socket?.on('order:ready', callback);
+    return () => this.socket?.off('order:ready', callback);
   }
 
   /**
@@ -89,6 +121,7 @@ class SocketService {
    */
   onOrderCompleted(callback: (data: any) => void) {
     this.socket?.on('order:completed', callback);
+    return () => this.socket?.off('order:completed', callback);
   }
 
   /**
@@ -96,6 +129,7 @@ class SocketService {
    */
   onTableUpdated(callback: (data: any) => void) {
     this.socket?.on('table:updated', callback);
+    return () => this.socket?.off('table:updated', callback);
   }
 
   /**
@@ -103,6 +137,7 @@ class SocketService {
    */
   onOrderUpdated(callback: (data: any) => void) {
     this.socket?.on('order:updated', callback);
+    return () => this.socket?.off('order:updated', callback);
   }
 
   /**
@@ -124,6 +159,110 @@ class SocketService {
    */
   isSocketConnected() {
     return this.isConnected && this.socket?.connected;
+  }
+
+  /**
+   * Emit order status update to server
+   * Falls back to REST if socket not connected
+   */
+  emitOrderStatusUpdate(orderId: number, status: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (!this.isSocketConnected()) {
+        console.warn('Socket not connected, use REST API fallback');
+        resolve(false);
+        return;
+      }
+
+      // Set timeout for acknowledgment
+      const timeout = setTimeout(() => {
+        console.warn('Socket emit timeout, use REST API fallback');
+        this.socket?.off('order:updateStatus:success', successHandler);
+        this.socket?.off('order:updateStatus:error', errorHandler);
+        resolve(false);
+      }, 5000);
+
+      // Listen for success/error acknowledgments
+      const successHandler = (data: any) => {
+        if (data.orderId === orderId.toString()) {
+          clearTimeout(timeout);
+          this.socket?.off('order:updateStatus:success', successHandler);
+          this.socket?.off('order:updateStatus:error', errorHandler);
+          console.log('Order status updated via socket:', data);
+          resolve(true);
+        }
+      };
+
+      const errorHandler = (data: any) => {
+        if (data.orderId === orderId.toString()) {
+          clearTimeout(timeout);
+          this.socket?.off('order:updateStatus:success', successHandler);
+          this.socket?.off('order:updateStatus:error', errorHandler);
+          console.error('Socket order update failed:', data.error);
+          resolve(false);
+        }
+      };
+
+      this.socket?.once('order:updateStatus:success', successHandler);
+      this.socket?.once('order:updateStatus:error', errorHandler);
+
+      // Emit the event
+      this.socket?.emit('order:updateStatus', { orderId: orderId.toString(), status });
+    });
+  }
+
+  /**
+   * Emit table status update to server
+   * Falls back to REST if socket not connected
+   */
+  emitTableStatusUpdate(tableId: number, status: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (!this.isSocketConnected()) {
+        console.warn('Socket not connected, use REST API fallback');
+        resolve(false);
+        return;
+      }
+
+      const timeout = setTimeout(() => {
+        console.warn('Socket emit timeout, use REST API fallback');
+        this.socket?.off('table:updateStatus:success', successHandler);
+        this.socket?.off('table:updateStatus:error', errorHandler);
+        resolve(false);
+      }, 5000);
+
+      const successHandler = (data: any) => {
+        if (data.tableId === tableId.toString()) {
+          clearTimeout(timeout);
+          this.socket?.off('table:updateStatus:success', successHandler);
+          this.socket?.off('table:updateStatus:error', errorHandler);
+          console.log('Table status updated via socket:', data);
+          resolve(true);
+        }
+      };
+
+      const errorHandler = (data: any) => {
+        if (data.tableId === tableId.toString()) {
+          clearTimeout(timeout);
+          this.socket?.off('table:updateStatus:success', successHandler);
+          this.socket?.off('table:updateStatus:error', errorHandler);
+          console.error('Socket table update failed:', data.error);
+          resolve(false);
+        }
+      };
+
+      this.socket?.once('table:updateStatus:success', successHandler);
+      this.socket?.once('table:updateStatus:error', errorHandler);
+
+      this.socket?.emit('table:updateStatus', { tableId: tableId.toString(), status });
+    });
+  }
+
+  /**
+   * Send kitchen alert
+   */
+  sendKitchenAlert(message: string, orderId?: number) {
+    if (this.isSocketConnected()) {
+      this.socket?.emit('kitchen:sendAlert', { message, orderId });
+    }
   }
 }
 

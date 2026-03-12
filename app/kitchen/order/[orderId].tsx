@@ -41,6 +41,29 @@ const getOrderType = (tableId: string, notes?: string) => {
   return 'dine-in';
 };
 
+const toReadable = (value: unknown): string => {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^./, (ch) => ch.toUpperCase());
+};
+
+const getItemInstructionText = (line: any): string | null => {
+  if (!line) return null;
+
+  const notes = String(line.specialInstructions || line?.customizations?.notes || '').trim();
+  const spice = String(line.spiceLevel || line?.customizations?.spiceLevel || '').trim();
+  const diet = String(line.dietPreference || line?.customizations?.dietPreference || '').trim();
+
+  const parts: string[] = [];
+  if (spice) parts.push(`Spice: ${toReadable(spice)}`);
+  if (diet) parts.push(`Diet: ${toReadable(diet)}`);
+  if (notes) parts.push(`Note: ${notes}`);
+
+  return parts.length ? parts.join(' • ') : null;
+};
+
 export default function KitchenOrderPrep() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const router = useRouter();
@@ -180,6 +203,7 @@ export default function KitchenOrderPrep() {
           {items.map(({ item, quantity }) => {
             const line = order.items.find((entry) => entry.itemId === item.id);
             const ready = line?.status === 'ready';
+            const itemInstruction = getItemInstructionText(line);
 
             return (
               <View key={item.id} style={[styles.itemCard, ready && styles.itemCardDone]}>
@@ -197,6 +221,7 @@ export default function KitchenOrderPrep() {
                       {quantity}x {item.name}
                     </Text>
                     {item.category ? <Text style={styles.categoryTag}>{item.category}</Text> : null}
+                    {itemInstruction ? <Text style={styles.itemInstruction}>{itemInstruction}</Text> : null}
                     {ready ? <Text style={styles.readyTag}>READY</Text> : null}
                   </View>
                 </View>
@@ -540,6 +565,18 @@ const styles = StyleSheet.create({
     color: '#334155',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+  },
+  itemInstruction: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 12,
+    color: '#334155',
+    fontWeight: '600',
   },
   readyTag: {
     alignSelf: 'flex-start',

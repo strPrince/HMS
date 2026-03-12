@@ -11,6 +11,8 @@ import {
   Wifi,
 } from 'lucide-react-native';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
+import { useNotificationStore } from '../../store/useNotificationStore';
+import { NotificationPanel } from '../../components/NotificationPanel';
 
 type QueueFilter = 'all' | 'dine-in' | 'parcel';
 type KitchenStatus = 'open' | 'preparing' | 'ready';
@@ -42,6 +44,29 @@ const formatElapsed = (createdAt: string, now: number) => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 };
 
+const toReadable = (value: unknown): string => {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^./, (ch) => ch.toUpperCase());
+};
+
+const getItemInstructionText = (line: any): string | null => {
+  if (!line) return null;
+
+  const notes = String(line.specialInstructions || line?.customizations?.notes || '').trim();
+  const spice = String(line.spiceLevel || line?.customizations?.spiceLevel || '').trim();
+  const diet = String(line.dietPreference || line?.customizations?.dietPreference || '').trim();
+
+  const parts: string[] = [];
+  if (spice) parts.push(`Spice: ${toReadable(spice)}`);
+  if (diet) parts.push(`Diet: ${toReadable(diet)}`);
+  if (notes) parts.push(`Note: ${notes}`);
+
+  return parts.length ? parts.join(' • ') : null;
+};
+
 
 
 export default function Kitchen() {
@@ -57,18 +82,23 @@ export default function Kitchen() {
     refreshTablesFromApi,
     refreshMenuFromApi,
   } = useRestaurantStore();
+  const notifications = useNotificationStore((state) => state.notifications);
+  const unreadCount = notifications.filter((n) => !n.isRead && n.type === 'order_placed').length;
   const [filter, setFilter] = useState<QueueFilter>('all');
   const [now, setNow] = useState(Date.now());
   const [refreshing, setRefreshing] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 10000);
     return () => clearInterval(timer);
   }, []);
 
+  // Only show orders the kitchen needs to act on — not ready, served, billing, completed, cancelled
+  const kitchenStatuses = ['pending', 'confirmed', 'in-kitchen', 'preparing'];
   const activeOrders = useMemo(
-    () => orders.filter((order) => order.status !== 'completed'),
+    () => orders.filter((order) => kitchenStatuses.includes(order.status)),
     [orders]
   );
 
@@ -78,7 +108,7 @@ export default function Kitchen() {
         const table = tables.find((entry) => entry.id === order.tableId);
         const orderType = order.orderType || 'dine-in';
         const status: KitchenStatus =
-          order.status === 'ready' ? 'ready' : 'open';
+          order.status === 'preparing' ? 'preparing' : 'open';
         const elapsedMinutes = Math.max(
           0,
           Math.floor((now - new Date(order.createdAt).getTime()) / 60000)
@@ -164,8 +194,13 @@ export default function Kitchen() {
             </View>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable style={styles.iconButton}>
+            <Pressable style={styles.iconButton} onPress={() => setShowNotifications(true)}>
               <Bell size={18} color="#374151" />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadCount}</Text>
+                </View>
+              )}
             </Pressable>
             <Pressable style={styles.iconButton}>
               <Wifi size={18} color="#374151" />
@@ -269,7 +304,9 @@ export default function Kitchen() {
 
                   <View style={styles.itemsWrap}>
                     {items.map(({ item, quantity }) => {
-                      const itemStatus = sourceOrder.items.find((line) => line.itemId === item.id)?.status;
+                      const line = sourceOrder.items.find((entry) => entry.itemId === item.id);
+                      const itemStatus = line?.status;
+                      const itemInstruction = getItemInstructionText(line);
                       return (
                         <View
                           key={`${summary.id}-${item.id}`}
@@ -285,6 +322,7 @@ export default function Kitchen() {
                                 <CheckCircle2 size={14} color={PRIMARY_GREEN} />
                               ) : null}
                             </View>
+                            {itemInstruction ? <Text style={styles.itemInstruction}>{itemInstruction}</Text> : null}
                             {sourceOrder.notes ? <Text style={styles.notePill}>{sourceOrder.notes}</Text> : null}
                           </View>
                         </View>
@@ -293,21 +331,25 @@ export default function Kitchen() {
                   </View>
                 </Pressable>
 
-                <Pressable
-                  style={[styles.readyButton, markingId === summary.id && { opacity: 0.6 }]}
-                  onPress={() => handleMarkReady(summary.id)}
-                  disabled={!!markingId}
-                >
-                  <CheckCircle2 size={20} color="#052E16" />
-                  <Text style={styles.readyButtonText}>
-                    {markingId === summary.id ? 'Updating...' : 'Mark Order Ready'}
-                  </Text>
-                </Pressable>
+                {summary.status !== 'ready' && (
+                  <Pressable
+                    style={[styles.readyButton, markingId === summary.id && { opacity: 0.6 }]}
+                    onPress={() => handleMarkReady(summary.id)}
+                    disabled={!!markingId}
+                  >
+                    <CheckCircle2 size={20} color="#052E16" />
+                    <Text style={styles.readyButtonText}>
+                      {markingId === summary.id ? 'Updating...' : 'Mark Order Ready'}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             );
           })
         )}
       </ScrollView>
+
+      <NotificationPanel visible={showNotifications} onClose={() => setShowNotifications(false)} />
     </View>
   );
 }
@@ -381,6 +423,26 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
   filterRow: {
     marginTop: 14,
@@ -587,6 +649,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     flexShrink: 1,
+  },
+  itemInstruction: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#374151',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
   },
   notePill: {
     marginTop: 8,
