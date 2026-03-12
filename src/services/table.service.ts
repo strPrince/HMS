@@ -11,6 +11,14 @@ class TableService {
     return response?.data?.data ?? response?.data;
   }
 
+  private getErrorMessage(error: any) {
+    return error?.message || error?.response?.data?.message || 'Unknown error';
+  }
+
+  private isAuthError(error: any) {
+    return error?.response?.status === 401;
+  }
+
   /**
    * Get all tables
    */
@@ -19,7 +27,9 @@ class TableService {
       const response = await apiClient.get(API_ENDPOINTS.TABLES.GET_ALL);
       return this.extractData(response);
     } catch (error) {
-      console.error('Failed to fetch tables:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to fetch tables: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }
@@ -32,7 +42,9 @@ class TableService {
       const response = await apiClient.get(API_ENDPOINTS.TABLES.GET_BY_ID(tableId));
       return this.extractData(response);
     } catch (error) {
-      console.error('Failed to fetch table:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to fetch table: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }
@@ -51,7 +63,9 @@ class TableService {
       }
       return this.extractData(response);
     } catch (error) {
-      console.error('Failed to update table status:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to update table status: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }

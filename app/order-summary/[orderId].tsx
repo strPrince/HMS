@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ArrowLeft, Plus, Minus, ChefHat } from 'lucide-react-native';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
-import { formatCurrency } from '../../src/utils/formatCurrency';
+import { formatCurrency } from '../../utils/helpers';
 import { useAuth } from '../../providers/AuthProvider';
 import { ConfirmDialog } from '../../src/components/common/ConfirmDialog';
 import { showToast } from '../../src/hooks/useToast';

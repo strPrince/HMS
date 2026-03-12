@@ -11,35 +11,17 @@ import {
   Printer,
 } from 'lucide-react-native';
 import { useRestaurantStore } from '../../../store/useRestaurantStore';
+import {
+  formatElapsed,
+  formatOrderTime,
+  getOrderType,
+  getItemInstructionText,
+} from '../../../utils/kitchen.helpers';
 
 const PRIMARY_GREEN = '#14E45F';
 const LIGHT_BACKGROUND = '#F3F5F4';
 const TITLE_TEXT = '#0F172A';
 const MUTED_TEXT = '#64748B';
-
-const formatElapsed = (createdAt: string, nowMs: number) => {
-  const diffMs = Math.max(0, nowMs - new Date(createdAt).getTime());
-  const totalMins = Math.floor(diffMs / 60000);
-  const hours = Math.floor(totalMins / 60);
-  const mins = totalMins % 60;
-  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-};
-
-const formatOrderTime = (createdAt: string) => {
-  return new Date(createdAt).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-};
-
-const getOrderType = (tableId: string, notes?: string) => {
-  const text = notes?.toLowerCase() || '';
-  if (tableId.startsWith('p') || text.includes('parcel') || text.includes('takeaway')) {
-    return 'parcel';
-  }
-  return 'dine-in';
-};
 
 export default function KitchenOrderPrep() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
@@ -180,6 +162,7 @@ export default function KitchenOrderPrep() {
           {items.map(({ item, quantity }) => {
             const line = order.items.find((entry) => entry.itemId === item.id);
             const ready = line?.status === 'ready';
+            const itemInstruction = getItemInstructionText(line);
 
             return (
               <View key={item.id} style={[styles.itemCard, ready && styles.itemCardDone]}>
@@ -197,6 +180,7 @@ export default function KitchenOrderPrep() {
                       {quantity}x {item.name}
                     </Text>
                     {item.category ? <Text style={styles.categoryTag}>{item.category}</Text> : null}
+                    {itemInstruction ? <Text style={styles.itemInstruction}>{itemInstruction}</Text> : null}
                     {ready ? <Text style={styles.readyTag}>READY</Text> : null}
                   </View>
                 </View>
@@ -540,6 +524,18 @@ const styles = StyleSheet.create({
     color: '#334155',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+  },
+  itemInstruction: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 12,
+    color: '#334155',
+    fontWeight: '600',
   },
   readyTag: {
     alignSelf: 'flex-start',

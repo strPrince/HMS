@@ -19,7 +19,41 @@ export const authEvents = new AuthEventEmitter();
 
 const STORAGE_KEYS = {
   TOKEN: '@hms_auth_token',
+  REFRESH_TOKEN: '@hms_refresh_token',
   USER: '@hms_user_data',
+};
+
+let isHandlingUnauthorized = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+const requestNewAccessToken = async (): Promise<string | null> => {
+  const refreshToken = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+  if (!refreshToken) return null;
+
+  try {
+    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
+    const nextAccessToken =
+      response?.data?.data?.tokens?.accessToken ||
+      response?.data?.data?.accessToken ||
+      response?.data?.accessToken ||
+      null;
+
+    const nextRefreshToken =
+      response?.data?.data?.tokens?.refreshToken ||
+      response?.data?.data?.refreshToken ||
+      null;
+
+    if (!nextAccessToken) return null;
+
+    await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, nextAccessToken);
+    if (nextRefreshToken) {
+      await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, nextRefreshToken);
+    }
+
+    return nextAccessToken;
+  } catch (_error) {
+    return null;
+  }
 };
 
 // Create axios instance
@@ -54,13 +88,42 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
-      // Don't re-emit logout if the call that failed was the logout endpoint itself
+      const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
       const requestUrl = error.config?.url || '';
-      const isLogoutCall = requestUrl.includes('/auth/staff/logout');
-      if (!isLogoutCall) {
-        // Token expired or invalid - clear storage and notify AuthProvider
-        await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
-        authEvents.emit('logout');
+      const isAuthEndpoint =
+        requestUrl.includes('/auth/staff/login') ||
+        requestUrl.includes('/auth/manager/login') ||
+        requestUrl.includes('/auth/refresh') ||
+        requestUrl.includes('/auth/refresh-token') ||
+        requestUrl.includes('/auth/staff/logout') ||
+        requestUrl.includes('/auth/logout');
+
+      if (!isAuthEndpoint && originalRequest && !originalRequest._retry) {
+        originalRequest._retry = true;
+
+        refreshPromise = refreshPromise || requestNewAccessToken();
+        const nextAccessToken = await refreshPromise;
+        refreshPromise = null;
+
+        if (nextAccessToken) {
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers.Authorization = `Bearer ${nextAccessToken}`;
+          return apiClient(originalRequest);
+        }
+      }
+
+      if (!isAuthEndpoint && !isHandlingUnauthorized) {
+        isHandlingUnauthorized = true;
+        try {
+          // Token expired/invalid: clear local session once and notify app.
+          await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.REFRESH_TOKEN, STORAGE_KEYS.USER]);
+          authEvents.emit('logout');
+        } finally {
+          // Prevent 401 storms from triggering repeated logout actions.
+          setTimeout(() => {
+            isHandlingUnauthorized = false;
+          }, 1500);
+        }
       }
     }
     return Promise.reject(error);
@@ -72,9 +135,17 @@ export const storage = {
   saveToken: async (token: string) => {
     await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, token);
   },
+
+  saveRefreshToken: async (token: string) => {
+    await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, token);
+  },
   
   getToken: async () => {
     return await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
+  },
+
+  getRefreshToken: async () => {
+    return await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
   },
   
   saveUser: async (user: any) => {
@@ -87,7 +158,7 @@ export const storage = {
   },
   
   clearAll: async () => {
-    await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
+    await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.REFRESH_TOKEN, STORAGE_KEYS.USER]);
   },
 };
 

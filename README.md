@@ -98,7 +98,6 @@ npx expo start --web    # Web only (http://localhost:8081)
 | **Payment methods** | Bill marked as "paid" but no UPI / card / cash split tracking |
 | **Print receipt** | Print button exists in UI but has no implementation |
 | **Share bill** | Share button exists in UI but has no implementation |
-| **Inventory / Stock** | Not implemented |
 | **Dark mode** | Not implemented |
 | **Multi-language / i18n** | Not implemented |
 | **Offline-first sync** | Currently runs on mocks when offline; no queue/retry for actions taken offline |
@@ -112,6 +111,10 @@ The app expects a REST API + Socket.io server at port `5000`.
 ### Environment Variables
 
 Create a `.env` file in the project root:
+
+```bash
+cp .env.example .env
+```
 
 ```env
 EXPO_PUBLIC_API_BASE_URL=http://<your-lan-ip>:5000/api/v1

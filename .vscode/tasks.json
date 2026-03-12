@@ -1,0 +1,12 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start HMS App (Tunnel)",
+			"type": "shell",
+			"command": "npx expo start --tunnel --clear",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

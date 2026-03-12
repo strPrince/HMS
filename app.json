@@ -2,6 +2,7 @@
   "expo": {
     "name": "Saffron & Sage Staff App",
     "slug": "saffron-sage-staff",
+    "scheme": "hms-staff",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -24,21 +25,14 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "softwareKeyboardLayoutMode": "pan"
+      "softwareKeyboardLayoutMode": "pan",
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/images/favicon.png",
       "bundler": "metro",
-      "output": "server"
+      "output": "single"
     },
-    "plugins": [
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/icon.png",
-          "color": "#F97316"
-        }
-      ]
-    ]
+    "plugins": []
   }
 }
