@@ -63,3 +63,8 @@ export const getTableStatusText = (status: TableStatus): string => {
   };
   return statusMap[status] ?? status;
 };
+
+// Get current timestamp as ISO string
+export const getCurrentTimestamp = (): string => {
+  return new Date().toISOString();
+};

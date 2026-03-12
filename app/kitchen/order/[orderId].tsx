@@ -11,58 +11,17 @@ import {
   Printer,
 } from 'lucide-react-native';
 import { useRestaurantStore } from '../../../store/useRestaurantStore';
+import {
+  formatElapsed,
+  formatOrderTime,
+  getOrderType,
+  getItemInstructionText,
+} from '../../../utils/kitchen.helpers';
 
 const PRIMARY_GREEN = '#14E45F';
 const LIGHT_BACKGROUND = '#F3F5F4';
 const TITLE_TEXT = '#0F172A';
 const MUTED_TEXT = '#64748B';
-
-const formatElapsed = (createdAt: string, nowMs: number) => {
-  const diffMs = Math.max(0, nowMs - new Date(createdAt).getTime());
-  const totalMins = Math.floor(diffMs / 60000);
-  const hours = Math.floor(totalMins / 60);
-  const mins = totalMins % 60;
-  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-};
-
-const formatOrderTime = (createdAt: string) => {
-  return new Date(createdAt).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-};
-
-const getOrderType = (tableId: string, notes?: string) => {
-  const text = notes?.toLowerCase() || '';
-  if (tableId.startsWith('p') || text.includes('parcel') || text.includes('takeaway')) {
-    return 'parcel';
-  }
-  return 'dine-in';
-};
-
-const toReadable = (value: unknown): string => {
-  return String(value || '')
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^./, (ch) => ch.toUpperCase());
-};
-
-const getItemInstructionText = (line: any): string | null => {
-  if (!line) return null;
-
-  const notes = String(line.specialInstructions || line?.customizations?.notes || '').trim();
-  const spice = String(line.spiceLevel || line?.customizations?.spiceLevel || '').trim();
-  const diet = String(line.dietPreference || line?.customizations?.dietPreference || '').trim();
-
-  const parts: string[] = [];
-  if (spice) parts.push(`Spice: ${toReadable(spice)}`);
-  if (diet) parts.push(`Diet: ${toReadable(diet)}`);
-  if (notes) parts.push(`Note: ${notes}`);
-
-  return parts.length ? parts.join(' • ') : null;
-};
 
 export default function KitchenOrderPrep() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();

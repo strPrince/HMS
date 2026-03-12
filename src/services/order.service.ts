@@ -5,7 +5,7 @@
 
 import apiClient from './api';
 import { API_ENDPOINTS } from '../config/api.config';
-import type { Order } from '../types/order';
+import type { Order } from '../../types/restaurant';
 
 export interface CreateOrderRequest {
   tableId: number;

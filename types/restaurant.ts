@@ -5,6 +5,14 @@ export type MenuItem = {
   category?: string;
   description?: string;
   isPopular?: boolean;
+  image?: string;
+  isAvailable?: boolean;
+};
+
+export type MenuCategory = {
+  id: string;
+  name: string;
+  icon?: string;
 };
 
 export type TableStatus = 'available' | 'occupied' | 'billing';
@@ -17,6 +25,12 @@ export type Table = {
   guests?: number;
   elapsedMinutes?: number;
   currentOrderId?: string;
+};
+
+export type FloorSection = {
+  id: string;
+  name: string;
+  tables: Table[];
 };
 
 export type OrderItemStatus = 'new' | 'preparing' | 'ready';
