@@ -5,15 +5,16 @@
 
 import apiClient from './api';
 import { API_ENDPOINTS } from '../config/api.config';
-import type { Order } from '../types/order';
+import type { Order } from '../../types/restaurant';
 
 export interface CreateOrderRequest {
   tableId: number;
-  orderType: 'dine_in' | 'parcel';
+  orderType: 'dine_in';
   items: {
     menuItemId: number;
     quantity: number;
     specialInstructions?: string;
+    customizations?: Record<string, unknown>;
   }[];
   customerName?: string;
   customerPhone?: string;
@@ -24,21 +25,19 @@ class OrderService {
     return response?.data?.data ?? response?.data;
   }
 
+  private getErrorMessage(error: any) {
+    return error?.message || error?.response?.data?.message || 'Unknown error';
+  }
+
+  private isAuthError(error: any) {
+    return error?.response?.status === 401;
+  }
+
   private buildPayloadVariants(payload: { status?: string; customerName?: string; customerPhone?: string }) {
     if (!payload?.status) return [payload];
 
     const { status, ...rest } = payload;
-    const variants = [
-      { ...rest, status },
-      { ...rest, orderStatus: status },
-      { ...rest, order_status: status },
-    ];
-
-    // Deduplicate payloads (some backends may use same key conventions).
-    return variants.filter(
-      (item, index, arr) =>
-        index === arr.findIndex((x) => JSON.stringify(x) === JSON.stringify(item))
-    );
+    return [{ ...rest, status }];
   }
 
   private async tryUpdateOrder(
@@ -78,7 +77,9 @@ class OrderService {
       const response = await apiClient.get(API_ENDPOINTS.ORDERS.GET_ALL, { params });
       return this.extractData(response);
     } catch (error) {
-      console.error('Failed to fetch orders:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to fetch orders: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }
@@ -93,7 +94,9 @@ class OrderService {
       });
       return this.extractData(response);
     } catch (error) {
-      console.error('Failed to fetch kitchen orders:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to fetch kitchen orders: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }
@@ -106,7 +109,9 @@ class OrderService {
       const response = await apiClient.get(API_ENDPOINTS.ORDERS.GET_BY_ID(orderId));
       return this.extractData(response);
     } catch (error) {
-      console.error('Failed to fetch order:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to fetch order: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }
@@ -119,7 +124,9 @@ class OrderService {
       const response = await apiClient.post(API_ENDPOINTS.ORDERS.CREATE, orderData);
       return this.extractData(response);
     } catch (error) {
-      console.error('Failed to create order:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to create order: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }
@@ -132,7 +139,9 @@ class OrderService {
     try {
       return await this.tryUpdateOrder(orderId, payload, ['put', 'patch']);
     } catch (error) {
-      console.error('Failed to update order with PUT:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to update order with PUT: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }
@@ -144,7 +153,31 @@ class OrderService {
     try {
       return await this.tryUpdateOrder(orderId, payload, ['put', 'patch']);
     } catch (error) {
-      console.error('Failed to update order:', error);
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to update order: ${this.getErrorMessage(error)}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Send billing request notification to manager
+   */
+  async sendBillingRequest(data: {
+    tableId: number;
+    orderId: number;
+    tableLabel: string;
+    waiterName: string;
+    itemCount: number;
+    total: number;
+  }) {
+    try {
+      const response = await apiClient.post('/orders/billing-request', data);
+      return this.extractData(response);
+    } catch (error) {
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to send billing request: ${this.getErrorMessage(error)}`);
+      }
       throw error;
     }
   }

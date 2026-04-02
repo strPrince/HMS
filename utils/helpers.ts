@@ -42,6 +42,8 @@ export const formatDuration = (minutes: number | undefined): string => {
 export const getOrderStatusText = (status: Order['status']): string => {
   const statusMap: Record<Order['status'], string> = {
     pending: 'Pending',
+    confirmed: 'Confirmed',
+    preparing: 'Preparing',
     'in-kitchen': 'In Kitchen',
     ready: 'Ready',
     billing: 'Billing',
@@ -60,4 +62,9 @@ export const getTableStatusText = (status: TableStatus): string => {
     billing: 'Billing',
   };
   return statusMap[status] ?? status;
+};
+
+// Get current timestamp as ISO string
+export const getCurrentTimestamp = (): string => {
+  return new Date().toISOString();
 };

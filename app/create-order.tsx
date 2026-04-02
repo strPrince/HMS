@@ -5,7 +5,6 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Search, SlidersHorizontal } from 'lucide-react-native';
 import { colors } from '../constants/colors';
 import { useRestaurantStore } from '../store/useRestaurantStore';
-import type { OrderType } from '../types/restaurant';
 import MenuItemCard from '../components/MenuItemCard';
 import ItemCustomizationModal from '../components/ItemCustomizationModal';
 
@@ -16,8 +15,7 @@ export default function CreateOrder() {
   const updateCartItem = useRestaurantStore(state => state.updateCartItem);
   const removeFromCart = useRestaurantStore(state => state.removeFromCart);
   const getCartItemCount = useRestaurantStore(state => state.getCartItemCount);
-  const orderType = useRestaurantStore(state => state.orderType);
-  const setOrderType = useRestaurantStore(state => state.setOrderType);
+
 
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -132,21 +130,6 @@ export default function CreateOrder() {
         <Pressable style={styles.filterButton}>
           <SlidersHorizontal size={24} color="#FF6B35" />
         </Pressable>
-      </View>
-
-      {/* Order Type Toggle */}
-      <View style={styles.orderTypeRow}>
-        {(['dine-in', 'parcel'] as OrderType[]).map((type) => (
-          <Pressable
-            key={type}
-            style={[styles.orderTypePill, orderType === type && styles.orderTypePillActive]}
-            onPress={() => setOrderType(type)}
-          >
-            <Text style={[styles.orderTypePillText, orderType === type && styles.orderTypePillTextActive]}>
-              {type === 'dine-in' ? '🍽️ Dine-In' : '📦 Parcel'}
-            </Text>
-          </Pressable>
-        ))}
       </View>
 
       <View style={styles.searchBar}>
@@ -340,32 +323,5 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFF'
   },
-  orderTypeRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-  },
-  orderTypePill: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#FFF',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-  },
-  orderTypePillActive: {
-    backgroundColor: '#FFF1E6',
-    borderColor: '#ff6a00',
-  },
-  orderTypePillText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  orderTypePillTextActive: {
-    color: '#ff6a00',
-    fontWeight: '700',
-  },
+
 });

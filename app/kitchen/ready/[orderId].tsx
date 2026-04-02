@@ -3,19 +3,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Check, RotateCcw, ShoppingBag } from 'lucide-react-native';
 import { useRestaurantStore } from '../../../store/useRestaurantStore';
+import { getOrderType } from '../../../utils/kitchen.helpers';
 
 const PRIMARY_GREEN = '#14E45F';
 const LIGHT_BACKGROUND = '#F3F5F4';
 const TITLE_TEXT = '#0F172A';
 const MUTED_TEXT = '#475569';
-
-const getOrderType = (tableId: string, notes?: string) => {
-  const text = notes?.toLowerCase() || '';
-  if (tableId.startsWith('p') || text.includes('parcel') || text.includes('takeaway')) {
-    return 'parcel';
-  }
-  return 'dine-in';
-};
 
 export default function KitchenReadyConfirmation() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();

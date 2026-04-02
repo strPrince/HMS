@@ -1,0 +1,91 @@
+name: Publish OTA Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "EAS update branch"
+        required: true
+        default: "preview"
+        type: choice
+        options:
+          - preview
+          - production
+      message:
+        description: "Update message"
+        required: true
+        default: "chore: OTA update"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish-ota:
+    runs-on: ubuntu-latest
+    env:
+      EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      OTA_BRANCH: ${{ inputs.branch }}
+      OTA_MESSAGE: ${{ inputs.message }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Clean install dependencies
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish OTA update
+        id: ota
+        run: |
+          if [ -z "$EAS_PROJECT_ID" ]; then
+            echo "EAS_PROJECT_ID secret is missing" >&2
+            exit 1
+          fi
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN secret is missing" >&2
+            exit 1
+          fi
+
+          npx eas update --non-interactive --branch "$OTA_BRANCH" --message "$OTA_MESSAGE" --json > ota-result.json
+
+          group_id=$(cat ota-result.json | jq -r 'if type=="array" then (.[0].group // .[0].groupId // "") else (.group // .groupId // "") end')
+          update_id=$(cat ota-result.json | jq -r 'if type=="array" then (.[0].id // "") else (.id // "") end')
+
+          echo "groupId=$group_id"
+          echo "updateId=$update_id"
+
+          echo "group_id=$group_id" >> $GITHUB_OUTPUT
+          echo "update_id=$update_id" >> $GITHUB_OUTPUT
+
+      - name: OTA summary
+        run: |
+          {
+            echo "### OTA Update Published"
+            echo "- Branch: \`${{ env.OTA_BRANCH }}\`"
+            echo "- Message: \`${{ env.OTA_MESSAGE }}\`"
+            echo "- Group ID: \`${{ steps.ota.outputs.group_id }}\`"
+            echo "- Update ID: \`${{ steps.ota.outputs.update_id }}\`"
+            echo ""
+            echo "Devices receive this update when app runtimeVersion matches and channel/branch mapping is correct."
+          } >> "$GITHUB_STEP_SUMMARY"

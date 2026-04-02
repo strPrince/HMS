@@ -4,9 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { colors } from '../../constants/colors';
 import { useRestaurantStore } from '../../store/useRestaurantStore';
+import { useNotificationStore } from '../../store/useNotificationStore';
+import { NotificationPanel } from '../../components/NotificationPanel';
 import { formatCurrency, formatTimeAgo } from '../../utils/helpers';
 import { useAuth } from '../../providers/AuthProvider';
-import { Clock } from 'lucide-react-native';
+import { Clock, Bell } from 'lucide-react-native';
 
 type TabKey = 'active' | 'closed';
 
@@ -15,11 +17,14 @@ export default function Orders() {
   const refreshOrdersFromApi = useRestaurantStore((state) => state.refreshOrdersFromApi);
   const refreshTablesFromApi = useRestaurantStore((state) => state.refreshTablesFromApi);
   const refreshMenuFromApi = useRestaurantStore((state) => state.refreshMenuFromApi);
+  const notifications = useNotificationStore((state) => state.notifications);
+  const unreadCount = notifications.filter((n) => !n.isRead && n.type === 'order_ready').length;
   const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<TabKey>('active');
   const [refreshing, setRefreshing] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const activeCount = useMemo(
     () => orders.filter((order) => order.status !== 'completed').length,
@@ -56,15 +61,25 @@ export default function Orders() {
 
   return (
     <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <Text style={styles.title}>Orders</Text>
+        <Pressable style={styles.bellButton} onPress={() => setShowNotifications(true)}>
+          <Bell size={22} color="#374151" />
+          {unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unreadCount}</Text>
+            </View>
+          )}
+        </Pressable>
+      </View>
+
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
-        <Text style={styles.title}>Orders</Text>
-
         <View style={styles.tabs}>
           {(['active', 'closed'] as const).map((key) => (
             <Pressable
@@ -167,6 +182,8 @@ export default function Orders() {
           </View>
         ) : null}
       </ScrollView>
+
+      <NotificationPanel visible={showNotifications} onClose={() => setShowNotifications(false)} />
     </View >
   );
 }
@@ -175,6 +192,43 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  bellButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
   content: {
     padding: 16,

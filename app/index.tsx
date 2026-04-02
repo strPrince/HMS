@@ -9,13 +9,27 @@ export default function Index() {
   // Mounted guard: Redirect only works on the client after the first render.
   // During SSR (or before hydration) we show a lightweight placeholder.
   const [mounted, setMounted] = useState(false);
+  const [loadingWatchdogElapsed, setLoadingWatchdogElapsed] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingWatchdogElapsed(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setLoadingWatchdogElapsed(true);
+    }, 6000);
+
+    return () => clearTimeout(timer);
+  }, [isLoading]);
+
   // Show loading spinner while checking authentication OR before client mount
-  if (isLoading || !mounted) {
+  if ((isLoading && !loadingWatchdogElapsed) || !mounted) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -28,9 +42,7 @@ export default function Index() {
     const target =
       user.role === 'cook'
         ? '/(tabs)/kitchen'
-        : user.role === 'manager'
-          ? '/(tabs)/manager'
-          : '/(tabs)/tables';
+        : '/(tabs)/tables';
     return <Redirect href={target} />;
   }
 

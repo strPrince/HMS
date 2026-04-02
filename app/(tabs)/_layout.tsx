@@ -1,12 +1,11 @@
 import { Tabs } from 'expo-router';
-import { Users, Utensils, Settings, ChefHat, LayoutGrid } from 'lucide-react-native';
+import { Users, Utensils, Settings, ChefHat } from 'lucide-react-native';
 import { useAuth } from '../../providers/AuthProvider';
 
 export default function TabsLayout() {
   const { user } = useAuth();
   const role = user?.role;
   const isKitchen = role === 'cook';
-  const isManager = role === 'manager';
 
   return (
     <Tabs
@@ -33,7 +32,7 @@ export default function TabsLayout() {
         options={{
           title: 'Tables',
           tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
-          href: (isKitchen || isManager) ? null : '/(tabs)/tables',
+          href: isKitchen ? null : '/(tabs)/tables',
         }}
       />
       <Tabs.Screen
@@ -41,7 +40,7 @@ export default function TabsLayout() {
         options={{
           title: 'Orders',
           tabBarIcon: ({ color, size }) => <Utensils size={size} color={color} />,
-          href: (isKitchen || isManager) ? null : '/(tabs)/orders',
+          href: isKitchen ? null : '/(tabs)/orders',
         }}
       />
       <Tabs.Screen
@@ -53,11 +52,9 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="manager"
+        name="kitchenStyles"
         options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => <LayoutGrid size={size} color={color} />,
-          href: isManager ? '/(tabs)/manager' : null,
+          href: null,
         }}
       />
       <Tabs.Screen

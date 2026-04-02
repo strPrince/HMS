@@ -1,0 +1,337 @@
+import { StyleSheet } from 'react-native';
+
+export const PRIMARY_GREEN = '#16E45E';
+const LIGHT_BACKGROUND = '#F3F5F4';
+const CARD_BORDER = '#DEE3E0';
+const MUTED_TEXT = '#6B7280';
+const TITLE_TEXT = '#0F172A';
+const PARCEL_BLUE = '#3B82F6';
+const NEW_ORDER_ORANGE = '#FFA500';
+
+export const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: LIGHT_BACKGROUND,
+  },
+  headerWrap: {
+    paddingTop: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  brandWrap: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+    flex: 1,
+  },
+  logoBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DDFBE9',
+  },
+  title: {
+    color: TITLE_TEXT,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    marginTop: 2,
+    fontSize: 13,
+    color: MUTED_TEXT,
+    fontWeight: '500',
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 8,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  filterRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  pill: {
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+  },
+  pillActive: {
+    backgroundColor: PRIMARY_GREEN,
+    borderColor: PRIMARY_GREEN,
+  },
+  pillText: {
+    color: '#374151',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  pillTextActive: {
+    color: '#052E16',
+    fontWeight: '700',
+  },
+  content: {
+    padding: 14,
+    paddingBottom: 28,
+    gap: 12,
+  },
+  emptyWrap: {
+    marginTop: 28,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    paddingVertical: 36,
+    paddingHorizontal: 18,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: TITLE_TEXT,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: MUTED_TEXT,
+    textAlign: 'center',
+  },
+  card: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  cardNew: {
+    borderColor: NEW_ORDER_ORANGE,
+    borderWidth: 2,
+  },
+  newBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: NEW_ORDER_ORANGE,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  newOrderLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  newOrderText: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: '#111827',
+  },
+  newOrderCode: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+    backgroundColor: '#FFE3B0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0EF',
+    gap: 10,
+  },
+  typeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  typeChipDine: {
+    borderColor: NEW_ORDER_ORANGE,
+    backgroundColor: '#FFF8EC',
+  },
+  typeChipParcel: {
+    borderColor: PARCEL_BLUE,
+    backgroundColor: '#ECF4FF',
+  },
+  typeChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  typeChipTextDine: {
+    color: '#C76B00',
+  },
+  typeChipTextParcel: {
+    color: PARCEL_BLUE,
+  },
+  tableTitle: {
+    marginTop: 6,
+    fontSize: 26,
+    lineHeight: 30,
+    fontWeight: '800',
+    color: TITLE_TEXT,
+    letterSpacing: -0.5,
+  },
+  serverText: {
+    marginTop: 4,
+    color: MUTED_TEXT,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  elapsedWrap: {
+    alignItems: 'flex-end',
+    marginTop: 4,
+  },
+  elapsedValue: {
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    color: '#0F172A',
+  },
+  elapsedValueUrgent: {
+    color: '#EF4444',
+  },
+  elapsedCaption: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  itemsWrap: {
+    backgroundColor: '#FFFFFF',
+  },
+  itemRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0EF',
+  },
+  itemRowReady: {
+    backgroundColor: '#ECFDF3',
+  },
+  qtyBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    backgroundColor: '#E9EBEE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyText: {
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemName: {
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '700',
+    color: '#111827',
+    flexShrink: 1,
+  },
+  itemInstruction: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#374151',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+  },
+  notePill: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    fontSize: 13,
+    color: '#374151',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  readyButton: {
+    margin: 14,
+    borderRadius: 12,
+    backgroundColor: PRIMARY_GREEN,
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  readyButtonText: {
+    color: '#052E16',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+});
+
+export default function KitchenStylesRoutePlaceholder() {
+  return null;
+}

@@ -14,11 +14,12 @@ export interface LoginRequest {
 export interface LoginResponse {
   success: boolean;
   token: string;
+  refreshToken?: string;
   user: {
     id: string;
     name: string;
     phone: string;
-    role: 'waiter' | 'cook' | 'manager';
+    role: 'waiter' | 'cook';
     manager_id?: string;
     restaurantId?: string;
   };
@@ -32,7 +33,7 @@ interface StaffLoginApiResponse {
       id: string;
       name: string;
       phone: string;
-      role: 'waiter' | 'cook' | 'manager';
+      role: 'waiter' | 'cook';
       restaurantId?: string;
     };
     tokens?: {
@@ -46,7 +47,7 @@ interface StaffLoginApiResponse {
     id: string;
     name: string;
     phone: string;
-    role: 'waiter' | 'cook' | 'manager';
+    role: 'waiter' | 'cook';
     manager_id?: string;
     restaurantId?: string;
   };
@@ -69,6 +70,7 @@ class AuthService {
 
       const payload = response.data;
       const token = payload?.data?.tokens?.accessToken || payload?.token;
+      const refreshToken = payload?.data?.tokens?.refreshToken;
       const user = payload?.data?.user || payload?.user;
 
       if (payload?.success && token && user) {
@@ -81,17 +83,29 @@ class AuthService {
 
         // Save token and user data
         await storage.saveToken(token);
+        if (refreshToken) {
+          await storage.saveRefreshToken(refreshToken);
+        }
         await storage.saveUser(normalizedUser);
 
         return {
           success: true,
           token,
+          refreshToken,
           user: normalizedUser,
         };
       }
 
       throw new Error('Login failed');
     } catch (error: any) {
+      // Network Error = phone can't reach the backend (wrong IP, different WiFi, firewall)
+      if (error.message === 'Network Error') {
+        const { API_BASE_URL } = require('../config/api.config');
+        console.error(`[Auth] Network Error — could not reach backend at: ${API_BASE_URL}`);
+        throw new Error(
+          `Cannot connect to server. Make sure your phone is on the same WiFi as the server and the backend is running.`
+        );
+      }
       const message = error.response?.data?.message || error.message || 'Invalid credentials';
       throw new Error(message);
     }

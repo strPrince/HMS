@@ -1,0 +1,135 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        required: true
+        default: "preview"
+        type: choice
+        options:
+          - preview
+          - production
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "components/**"
+      - "src/**"
+      - "store/**"
+      - "providers/**"
+      - "types/**"
+      - "utils/**"
+      - "constants/**"
+      - "app.json"
+      - "package.json"
+      - "eas.json"
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    env:
+      PROFILE: ${{ inputs.profile || 'preview' }}
+      EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Clean install dependencies
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install
+
+      - name: Debug dependencies
+        run: npm list react lucide-react-native
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android artifact on EAS
+        id: eas_build
+        run: |
+          if [ -z "$EAS_PROJECT_ID" ]; then
+            echo "EAS_PROJECT_ID secret is missing" >&2
+            exit 1
+          fi
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN secret is missing" >&2
+            exit 1
+          fi
+          npx eas build --platform android --profile "$PROFILE" --non-interactive --wait --json > build-result.json
+
+          artifact_url=$(cat build-result.json | jq -r 'if type=="array" then (.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // "") else (.artifacts.buildUrl // .artifacts.applicationArchiveUrl // "") end')
+          build_id=$(cat build-result.json | jq -r 'if type=="array" then (.[0].id // "") else (.id // "") end')
+
+          echo "buildId=$build_id"
+          echo "artifactUrl=$artifact_url"
+
+          if [ -z "$artifact_url" ]; then
+            echo "Artifact URL not found" >&2
+            cat build-result.json >&2
+            exit 1
+          fi
+
+          echo "build_id=$build_id" >> $GITHUB_OUTPUT
+          echo "artifact_url=$artifact_url" >> $GITHUB_OUTPUT
+
+      - name: Download APK/AAB artifact
+        run: |
+          mkdir -p artifacts
+          FILE_NAME=$(basename "${{ steps.eas_build.outputs.artifact_url }}")
+          EXT="${FILE_NAME##*.}"
+          FINAL_NAME="hms-staff-${PROFILE}.${EXT}"
+          curl -L "${{ steps.eas_build.outputs.artifact_url }}" -o "artifacts/$FINAL_NAME"
+          echo "ARTIFACT_NAME=$FINAL_NAME" >> $GITHUB_ENV
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ env.PROFILE }}
+          path: artifacts/${{ env.ARTIFACT_NAME }}
+
+      - name: Publish latest preview APK to GitHub Release
+        if: env.PROFILE == 'preview'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: Latest Android APK (Preview)
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: artifacts/${{ env.ARTIFACT_NAME }}
+          body: |
+            Auto-generated Android preview build.
+            Build ID: ${{ steps.eas_build.outputs.build_id }}
+
+      - name: Build summary
+        run: |
+          {
+            echo "### Android Build Complete"
+            echo "- Profile: \\`${{ env.PROFILE }}\\`"
+            echo "- Build ID: \\`${{ steps.eas_build.outputs.build_id }}\\`"
+            echo "- Artifact URL: ${{ steps.eas_build.outputs.artifact_url }}"
+            echo ""
+            echo "Download artifact from the Actions run artifacts section."
+          } >> "$GITHUB_STEP_SUMMARY"

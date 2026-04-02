@@ -20,11 +20,34 @@ const getLanHostFromExpo = (): string | null => {
     (Constants as any)?.manifest?.debuggerHost;
 
   if (!hostUri || typeof hostUri !== 'string') return null;
-  return hostUri.split(':')[0] || null;
+
+  const host = hostUri.split(':')[0] || null;
+  if (!host) return null;
+
+  // Reject tunnel/cloud hostnames (exp.direct, ngrok, etc.) – only accept
+  // plain IPv4 addresses so we never accidentally point the API at a tunnel URL.
+  const isIpAddress = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  if (!isIpAddress) {
+    // Running in tunnel mode — LAN IP cannot be auto-detected.
+    // Set EXPO_PUBLIC_API_BASE_URL and EXPO_PUBLIC_SOCKET_URL in your .env file.
+    // Example: EXPO_PUBLIC_API_BASE_URL=http://192.168.1.x:5000/api/v1
+    console.warn(
+      '[API Config] Tunnel mode detected. Cannot auto-detect backend IP.\n' +
+      'Create a .env file in HMS-app/ with:\n' +
+      '  EXPO_PUBLIC_API_BASE_URL=http://<YOUR_PC_LAN_IP>:5000/api/v1\n' +
+      '  EXPO_PUBLIC_SOCKET_URL=http://<YOUR_PC_LAN_IP>:5000'
+    );
+    return null;
+  }
+
+  return host;
 };
 
 const getDevApiBaseUrl = () => {
-  if (ENV_API_BASE_URL) return ENV_API_BASE_URL;
+  if (ENV_API_BASE_URL) {
+    console.log('[API Config] Using EXPO_PUBLIC_API_BASE_URL:', ENV_API_BASE_URL);
+    return ENV_API_BASE_URL;
+  }
 
   // Browser should use localhost
   if (Platform.OS === 'web') {
@@ -34,6 +57,7 @@ const getDevApiBaseUrl = () => {
   // Physical device should use LAN host from Expo
   const lanHost = getLanHostFromExpo();
   if (lanHost) {
+    console.log('[API Config] Auto-detected LAN host:', lanHost);
     return `http://${lanHost}:5000/api/v1`;
   }
 
@@ -42,11 +66,15 @@ const getDevApiBaseUrl = () => {
     return 'http://10.0.2.2:5000/api/v1';
   }
 
+  console.warn('[API Config] Could not detect LAN IP. Falling back to localhost — this will fail on physical devices.');
   return 'http://localhost:5000/api/v1';
 };
 
 const getDevSocketUrl = () => {
-  if (ENV_SOCKET_URL) return ENV_SOCKET_URL;
+  if (ENV_SOCKET_URL) {
+    console.log('[Socket Config] Using EXPO_PUBLIC_SOCKET_URL:', ENV_SOCKET_URL);
+    return ENV_SOCKET_URL;
+  }
 
   if (Platform.OS === 'web') {
     return 'http://localhost:5000';
@@ -61,6 +89,7 @@ const getDevSocketUrl = () => {
     return 'http://10.0.2.2:5000';
   }
 
+  console.warn('[Socket Config] Could not detect LAN IP. Falling back to localhost.');
   return 'http://localhost:5000';
 };
 
@@ -73,8 +102,12 @@ export const SOCKET_URL = __DEV__
   ? getDevSocketUrl()
   : (ENV_SOCKET_URL || 'https://api.your-restaurant.com');
 
+// Startup diagnostic — shows in Metro/Expo console
+console.log(`[HMS] API_BASE_URL = ${API_BASE_URL}`);
+console.log(`[HMS] SOCKET_URL  = ${SOCKET_URL}`);
+
 // API Timeout
-export const API_TIMEOUT = 30000; // 30 seconds
+export const API_TIMEOUT = 10000; // 10 seconds - faster failure detection
 
 // API Endpoints
 export const API_ENDPOINTS = {
@@ -82,7 +115,7 @@ export const API_ENDPOINTS = {
   AUTH: {
     LOGIN: '/auth/staff/login',
     REGISTER_PUSH_TOKEN: '/auth/staff/register-push-token',
-    LOGOUT: '/auth/staff/logout',
+    LOGOUT: '/auth/logout',
   },
 
   // Menu

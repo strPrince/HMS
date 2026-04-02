@@ -1,6 +1,7 @@
 ﻿# Expo
 .expo/
 web-build/
+dist/
 
 # Node
 node_modules/
@@ -11,7 +12,12 @@ node_modules/
 # Env
 .env
 .env.local
+.env.development.local
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Firebase
+.firebase/
+firebase-debug.log
