@@ -51,7 +51,7 @@ interface RestaurantStore {
   updateOrder: (id: string, order: Partial<Order>) => void;
   deleteOrder: (id: string) => void;
   selectOrder: (order: Order | null) => void;
-  submitOrderToKitchen: (tableId: string, waiterName?: string) => Promise<Order | null>;
+  submitOrderToKitchen: (tableId: string, waiterName?: string, customerPhone?: string) => Promise<Order | null>;
   markOrderAsReady: (orderId: string) => Promise<void>;
   markOrderAsDelivered: (orderId: string) => Promise<void>;
   moveOrderToBilling: (orderId: string) => Promise<void>;
@@ -327,7 +327,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
         }
       },
 
-      submitOrderToKitchen: async (tableId, _waiterName) => {
+      submitOrderToKitchen: async (tableId, _waiterName, customerPhone) => {
         const { cart } = get();
         if (cart.length === 0) return null;
 
@@ -336,6 +336,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
           created = await OrderService.createOrder({
             tableId: toNumber(tableId),
             orderType: 'dine_in',
+            customerPhone: customerPhone?.trim() || undefined,
             items: cart.map((item) => ({
               menuItemId: toNumber(item.itemId),
               quantity: item.quantity,

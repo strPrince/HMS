@@ -161,6 +161,64 @@ class OrderService {
   }
 
   /**
+   * Add items to an existing order
+   */
+  async addOrderItems(
+    orderId: string,
+    payload: {
+      items: {
+        menuItemId: number;
+        quantity: number;
+        customizations?: Record<string, unknown>;
+      }[];
+    }
+  ) {
+    try {
+      const response = await apiClient.post(API_ENDPOINTS.ORDERS.ADD_ITEMS(orderId), payload);
+      return this.extractData(response);
+    } catch (error) {
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to add order items: ${this.getErrorMessage(error)}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Update a specific order item
+   */
+  async updateOrderItem(
+    orderId: string,
+    itemId: string,
+    payload: { quantity?: number; customizations?: Record<string, unknown> }
+  ) {
+    try {
+      const response = await apiClient.put(API_ENDPOINTS.ORDERS.UPDATE_ITEM(orderId, itemId), payload);
+      return this.extractData(response);
+    } catch (error) {
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to update order item: ${this.getErrorMessage(error)}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a specific order item
+   */
+  async deleteOrderItem(orderId: string, itemId: string) {
+    try {
+      const response = await apiClient.delete(API_ENDPOINTS.ORDERS.DELETE_ITEM(orderId, itemId));
+      return this.extractData(response);
+    } catch (error) {
+      if (!this.isAuthError(error)) {
+        console.warn(`Failed to delete order item: ${this.getErrorMessage(error)}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Send billing request notification to manager
    */
   async sendBillingRequest(data: {
