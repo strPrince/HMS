@@ -112,6 +112,7 @@ export const mapOrderFromApi = (order: any): Order => ({
   updatedAt: order.updatedAt || order.updated_at,
   notes: order.specialNotes || order.special_notes || order.notes || '',
   waiterName: order.waiter?.name,
+  customerPhone: order.customerPhone || order.customer_phone || undefined,
   orderType:
     String(order.orderType || order.order_type || '')
       .toLowerCase()
