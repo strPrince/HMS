@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -28,6 +28,7 @@ export default function OrderSummary() {
   const insets = useSafeAreaInsets();
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [customerPhone, setCustomerPhone] = useState('');
 
   // Get table ID from URL params (for new orders)
   const tableId = params.tableId as string;
@@ -82,7 +83,7 @@ export default function OrderSummary() {
     }
 
     setSubmitting(true);
-    const newOrder = await submitOrderToKitchen(tableId, user?.name);
+    const newOrder = await submitOrderToKitchen(tableId, user?.name, customerPhone);
 
     if (newOrder) {
       setShowConfirm(false);
@@ -201,6 +202,19 @@ export default function OrderSummary() {
             <Text style={styles.totalLabelBold}>Total Amount</Text>
             <Text style={styles.totalAmount}>{formatCurrency(totalAmount)}</Text>
           </View>
+        </View>
+
+        <View style={styles.customerSection}>
+          <Text style={styles.sectionTitle}>Customer WhatsApp</Text>
+          <Text style={styles.sectionSubtitle}>Optional — used to send bill link</Text>
+          <TextInput
+            value={customerPhone}
+            onChangeText={setCustomerPhone}
+            placeholder="Enter WhatsApp number"
+            keyboardType="phone-pad"
+            style={styles.customerInput}
+            placeholderTextColor="#9CA3AF"
+          />
         </View>
       </ScrollView>
 
@@ -455,6 +469,26 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#475569',
     marginBottom: 8
+  },
+  customerSection: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2
+  },
+  customerInput: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#111827'
   },
   noteText: {
     fontSize: 14,

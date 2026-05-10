@@ -60,8 +60,14 @@ export default function OrderDetails() {
   }) : combinedItems;
 
   const subtotal = displayItems.reduce((sum, { item, quantity }) => sum + (item.price * quantity), 0);
-  const gst = Math.round(subtotal * 0.05 * 100) / 100;
+
+  const combinedSubtotal = allTableOrders.reduce((sum, o) => sum + Number(o.subtotal ?? 0), 0);
+  const combinedTax = allTableOrders.reduce((sum, o) => sum + Number(o.taxAmount ?? 0), 0);
+  const taxRate = combinedSubtotal > 0 ? combinedTax / combinedSubtotal : 0;
+  const gst = Math.round(subtotal * taxRate * 100) / 100;
   const grandTotal = subtotal + gst;
+  const taxPercent = Math.round(taxRate * 100 * 100) / 100;
+  const taxLabel = `GST (${Number.isInteger(taxPercent) ? taxPercent.toFixed(0) : taxPercent.toFixed(2)}%)`;
   const guests = table?.guests || 0;
 
   const timeIn = new Date(order.createdAt).toLocaleTimeString('en-US', {
@@ -111,22 +117,63 @@ export default function OrderDetails() {
     }
 
     try {
-      // Persist notes to backend
       const numId = orderId.replace(/^o/, '');
+      const originalItems = order?.items || [];
+
+      const existingByItemId = new Map(originalItems.map((item) => [item.itemId, item]));
+      const nextByItemId = new Map(localItems.map((item) => [item.itemId, item]));
+
+      const toAdd = localItems.filter((item) => !existingByItemId.has(item.itemId));
+      const toDelete = originalItems.filter((item) => !nextByItemId.has(item.itemId));
+      const toUpdate = localItems
+        .filter((item) => existingByItemId.has(item.itemId))
+        .filter((item) => {
+          const existing = existingByItemId.get(item.itemId);
+          return existing && existing.quantity !== item.quantity;
+        });
+
+      if (toAdd.length > 0) {
+        await OrderService.addOrderItems(numId, {
+          items: toAdd.map((item) => ({
+            menuItemId: Number(item.itemId.replace(/^m/, '')),
+            quantity: item.quantity,
+            customizations: item.customizations || {},
+          })),
+        });
+      }
+
+      for (const item of toUpdate) {
+        const existing = existingByItemId.get(item.itemId);
+        const orderItemId = existing?.orderItemId;
+        if (!orderItemId) continue;
+        await OrderService.updateOrderItem(numId, orderItemId, {
+          quantity: item.quantity,
+          customizations: item.customizations || {},
+        });
+      }
+
+      for (const item of toDelete) {
+        if (!item.orderItemId) continue;
+        await OrderService.deleteOrderItem(numId, item.orderItemId);
+      }
+
+      // Persist notes to backend
       await OrderService.updateOrder(numId, { specialNotes: notes } as any);
+
+      updateOrder(orderId, {
+        items: localItems,
+        notes: notes,
+        status: orderStatus
+      });
+
+      await refreshOrdersFromApi();
+      setIsEditing(false);
+      Alert.alert('Success', 'Order updated successfully');
     } catch (e) {
-      console.warn('[OrderDetails] Failed to save notes to backend:', e);
-      // Continue to update local state even if API fails
+      console.warn('[OrderDetails] Failed to update order items:', e);
+      Alert.alert('Error', 'Failed to update order. Please try again.');
+      return;
     }
-
-    updateOrder(orderId, {
-      items: localItems,
-      notes: notes,
-      status: orderStatus
-    });
-
-    setIsEditing(false);
-    Alert.alert('Success', 'Order updated successfully');
   };
 
   const handleCancelEdit = () => {
@@ -396,6 +443,7 @@ export default function OrderDetails() {
             subtotal={subtotal}
             gst={gst}
             grandTotal={grandTotal}
+            taxLabel={taxLabel}
             sendingToManager={sendingToManager}
             onSendToManager={handleSendToManager}
             onBackToTables={() => router.replace('/(tabs)/tables')}
