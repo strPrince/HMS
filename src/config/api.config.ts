@@ -137,6 +137,9 @@ export const API_ENDPOINTS = {
     GET_BY_ID: (id: string) => `/orders/${id}`,
     CREATE: '/orders',
     UPDATE: (id: string) => `/orders/${id}`,
+    ADD_ITEMS: (id: string) => `/orders/${id}/items`,
+    UPDATE_ITEM: (orderId: string, itemId: string) => `/orders/${orderId}/items/${itemId}`,
+    DELETE_ITEM: (orderId: string, itemId: string) => `/orders/${orderId}/items/${itemId}`,
     KITCHEN_QUEUE: '/orders/kitchen',
   },
 

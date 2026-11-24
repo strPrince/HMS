@@ -8,6 +8,7 @@ interface BillSummaryProps {
   subtotal: number;
   gst: number;
   grandTotal: number;
+  taxLabel: string;
   sendingToManager: boolean;
   onSendToManager: () => void;
   onBackToTables: () => void;
@@ -18,6 +19,7 @@ export default function BillSummary({
   subtotal,
   gst,
   grandTotal,
+  taxLabel,
   sendingToManager,
   onSendToManager,
   onBackToTables,
@@ -44,7 +46,7 @@ export default function BillSummary({
           <Text style={styles.billTotalValue}>{formatCurrency(subtotal)}</Text>
         </View>
         <View style={styles.billTotalRow}>
-          <Text style={styles.billTotalLabel}>GST (5%)</Text>
+          <Text style={styles.billTotalLabel}>{taxLabel}</Text>
           <Text style={styles.billTotalValue}>{formatCurrency(gst)}</Text>
         </View>
         <View style={[styles.billTotalRow, { marginTop: 4 }]}>

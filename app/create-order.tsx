@@ -28,7 +28,7 @@ export default function CreateOrder() {
 
   const categories = useMemo(() => {
     const unique = Array.from(new Set(menuItems.map((item) => item.category).filter(Boolean)));
-    return ['All Items', 'Starters', 'Main Course', ...unique.filter(c => c !== 'Starters' && c !== 'Main Course')] as string[];
+    return ['All Items', ...unique] as string[];
   }, [menuItems]);
 
   const filteredItems = useMemo(() => {
@@ -47,9 +47,23 @@ export default function CreateOrder() {
   }, [activeCategory, menuItems, query]);
 
   const handleAddItem = useCallback((item: any) => {
+    const isCustomizable = item.customizations?.isCustomizable ?? true; // Default to true if not specified
+    
+    if (!isCustomizable) {
+      // Bypass the customization modal for items like cold drinks
+      addToCart({
+        itemId: item.id,
+        quantity: 1,
+        specialInstructions: '',
+        spiceLevel: undefined,
+        dietPreference: undefined,
+      });
+      return;
+    }
+
     setSelectedItem(item);
     setShowCustomization(true);
-  }, []);
+  }, [addToCart]);
 
   const handleAddToCart = useCallback((quantity: number, customizations: any) => {
     if (!selectedItem) return;
@@ -120,8 +134,8 @@ export default function CreateOrder() {
     </Pressable>
   ), [activeCategory]);
 
-  const ListHeaderComponent = useCallback(() => (
-    <>
+  const listHeaderElement = (
+    <View>
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Pressable style={styles.backButton} onPress={handleBack}>
           <ArrowLeft size={24} color="#000" />
@@ -151,8 +165,8 @@ export default function CreateOrder() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoryRow}
       />
-    </>
-  ), [insets.top, handleBack, query, categories, renderCategoryItem]);
+    </View>
+  );
 
   const ListFooterComponent = useCallback(() => (
     <View style={styles.listFooter} />
@@ -164,7 +178,7 @@ export default function CreateOrder() {
         data={filteredItems}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={ListHeaderComponent}
+        ListHeaderComponent={listHeaderElement}
         ListFooterComponent={ListFooterComponent}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
